@@ -1,4 +1,5 @@
 import flet as ft
+from accounts import AccountsManager
 
 
 def main(page: ft.Page):
@@ -8,7 +9,12 @@ def main(page: ft.Page):
     page.width = 1200
     page.height = 900
 
+    def update_content_area(new_content: ft.Container):
+        content_area.content = new_content
+        page.update()
 
+    accounts_manager = AccountsManager(page, update_content_area)
+    
     def on_menu_click(e: ft.ControlEvent):
         for item in menu_items:
             item.bgcolor = None
@@ -16,7 +22,7 @@ def main(page: ft.Page):
         e.control.bgcolor = ft.Colors.BLUE_GREY_700
 
         if e.control.data == "wallets":
-            content_area.content = wallets_view()
+            content_area.content = accounts_manager.get_view()
         elif e.control.data == "projects":
             content_area.content = projects_view()
         elif e.control.data == "expenses":
@@ -26,15 +32,6 @@ def main(page: ft.Page):
 
         page.update()
 
-
-    def wallets_view():
-        return ft.Container(
-            content=ft.Column([
-                ft.Text("Wallets management", size=24, weight=ft.FontWeight.BOLD),
-                ft.Text("Here is will be wallets list", color=ft.Colors.GREY_400)
-            ]),
-            padding=20
-        )
 
     def projects_view():
         return ft.Container(
@@ -100,7 +97,7 @@ def main(page: ft.Page):
     ]
 
     content_area = ft.Container(
-        content=wallets_view(),
+        content=accounts_manager.get_view(),
         expand=True
     )
 
