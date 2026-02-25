@@ -19,8 +19,6 @@ def main(page: ft.Page):
         for item in menu_items:
             item.bgcolor = None
 
-        e.control.bgcolor = ft.Colors.BLUE_GREY_700
-
         if e.control.data == "wallets":
             content_area.content = accounts_manager.get_view()
         elif e.control.data == "projects":
@@ -31,7 +29,6 @@ def main(page: ft.Page):
             content_area.content = stats_view()
 
         page.update()
-
 
     def projects_view():
         return ft.Container(

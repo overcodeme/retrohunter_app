@@ -27,7 +27,6 @@ def save_accounts(accounts: List[Dict[str, Any]]):
     with open(JSON_FILE, 'w', encoding='utf-8') as f:
         json.dump(accounts, f, indent=4, ensure_ascii=False)
 
-
 class AccountsManager:
     def __init__(self, page: ft.Page, update_content_callback):
         self.page = page
@@ -41,6 +40,22 @@ class AccountsManager:
         self.twitter_field = None
         self.discord_field = None
         self.dialog_modal = None
+
+    @staticmethod
+    def centered_header(text: str, width: int = 100) -> ft.DataColumn:
+        """Создает центрированный заголовок с фиксированной шириной"""
+        return ft.DataColumn(
+            ft.Container(
+                content=ft.Text(
+                    text, 
+                    size=12, 
+                    weight=ft.FontWeight.BOLD,
+                    text_align=ft.TextAlign.CENTER,  # Выравнивание текста
+                ),
+                width=width,  # Фиксированная ширина
+                alignment=ft.Alignment.CENTER,  # Выравнивание контейнера
+            )
+        )
 
 
     def get_view(self) -> ft.Container:
@@ -78,28 +93,37 @@ class AccountsManager:
         if self.accounts:
             table = ft.DataTable(
                 columns=[
-                    ft.DataColumn(ft.Text("ID")),
-                    ft.DataColumn(ft.Text("EVM Key")),
-                    ft.DataColumn(ft.Text("Solana Key")),
-                    ft.DataColumn(ft.Text("Email")),
-                    ft.DataColumn(ft.Text("Twitter")),
-                    ft.DataColumn(ft.Text("Discord")),
-                    ft.DataColumn(ft.Text("Actions"))
+                    ft.DataColumn(ft.Text("ID", size=12)),
+                    self.centered_header("EVM Key", 120),
+                    self.centered_header("Solana Key", 120),
+                    self.centered_header("Email", 150),
+                    self.centered_header("Twitter", 120),
+                    self.centered_header("Discord", 120),
+                    self.centered_header("Actions", 80),
                 ],
                 rows=table_rows,
                 border=ft.Border.all(1, ft.Colors.GREY_800),
                 vertical_lines=ft.BorderSide(1, ft.Colors.GREY_800),
-                horizontal_lines=ft.BorderSide(1, ft.Colors.GREY_800)
+                horizontal_lines=ft.BorderSide(1, ft.Colors.GREY_800),
+                column_spacing=15,
+            )
+
+            table_container = ft.Container(
+                content=ft.Row([
+                    table
+                ], scroll=ft.ScrollMode.ALWAYS),
+                height=400
             )
         else:
-            table = ft.Container(
+            table_container = ft.Container(
                 content=ft.Column([
                     ft.Icon(ft.Icons.ACCOUNT_BALANCE_OUTLINED, size=64, color=ft.Colors.GREY_600),
                     ft.Text("No accounts yet", size=20, color=ft.Colors.GREY_400),
                     ft.Text("Click 'Add account' to add an account", color=ft.Colors.GREY_500),
                 ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
                 padding=50,
-                alignment=ft.Alignment.CENTER
+                alignment=ft.Alignment.CENTER,
+                height=400,
             )
 
         return ft.Container(
@@ -109,15 +133,7 @@ class AccountsManager:
                 stats_row,
                 ft.Container(height=20),
                 ft.Text("Accounts list", size=18, weight=ft.FontWeight.BOLD),
-                ft.Container(
-                    content=ft.Column([
-                        table
-                    ], scroll=ft.ScrollMode.AUTO),
-                    height=400,
-                    border=ft.Border.all(1, ft.Colors.GREY_800),
-                    border_radius=10,
-                    padding=10
-                )
+                table_container
             ]),
             padding=20
         )
@@ -133,25 +149,85 @@ class AccountsManager:
                 icon_color=ft.Colors.RED_400,
                 tooltip="Delete account",
                 data=acc.get("id"),
-                on_click=self.delete_account
+                on_click=self.delete_account,
+                width=32,
+                height=32
             )
 
             edit_btn = ft.IconButton(
                 icon=ft.Icons.EDIT_OUTLINED,
                 icon_color=ft.Colors.BLUE_400,
                 tooltip="Edit account (coming soon)",
-                disabled=True
+                disabled=True,
+                width=32,
+                height=32
+            )
+
+            id_text = ft.Text(
+                str(acc.get("id", "")),
+                size=12,
+                width=40
+            )
+
+            evm_text = ft.Text(
+                acc.get("evm_private_key", ""),
+                size=12,
+                selectable=True,
+                max_lines=1,
+                overflow=ft.TextOverflow.ELLIPSIS,
+                width=120,
+                tooltip=acc.get("evm_private_key", "")
+            )
+
+            sol_text = ft.Text(
+                acc.get("sol_private_key", ""),
+                size=12,
+                selectable=True,
+                max_lines=1,
+                overflow=ft.TextOverflow.ELLIPSIS,
+                width=120,
+                tooltip=acc.get("sol_private_key", ""),  # Всплывающая подсказка с полным значением
+            )
+
+            email_text = ft.Text(
+                acc.get("email", ""),
+                size=12,
+                selectable=True,
+                max_lines=1,
+                overflow=ft.TextOverflow.ELLIPSIS,
+                width=150,
+                tooltip=acc.get("email", ""),  # Всплывающая подсказка с полным значением
+            )
+
+            twitter_text = ft.Text(
+                acc.get("twitter_token", ""),
+                size=12,
+                selectable=True,
+                max_lines=1,
+                overflow=ft.TextOverflow.ELLIPSIS,
+                width=120,
+                tooltip=acc.get("twitter_token", ""),
+            )
+
+            discord_text = ft.Text(
+                acc.get("discord_token", ""),
+                size=12,
+                selectable=True,
+                max_lines=1,
+                overflow=ft.TextOverflow.ELLIPSIS,
+                width=120,
+                tooltip=acc.get("discord_token", ""),
             )
 
             row = ft.DataRow(
                 cells=[
-                    ft.DataCell(ft.Text(str(acc.get("id", "")))),
-                    ft.DataCell(ft.Text(acc.get("evm_private_key", ""), selectable=True)),
-                    ft.DataCell(ft.Text(acc.get("sol_private_key", ""), selectable=True)),  # Исправлено
-                    ft.DataCell(ft.Text(acc.get("email", ""), selectable=True)),
-                    ft.DataCell(ft.Text(acc.get("twitter_token", ""), selectable=True)),
-                    ft.DataCell(ft.Text(acc.get("discord_token", ""), selectable=True)),
-                    ft.DataCell(ft.Row([edit_btn, delete_btn], spacing=5))
+                    ft.DataCell(id_text),
+                    ft.DataCell(evm_text),
+                    ft.DataCell(sol_text),
+                    ft.DataCell(email_text),
+                    ft.DataCell(twitter_text),
+                    ft.DataCell(discord_text),
+                    ft.DataCell(ft.Row([edit_btn, delete_btn], spacing=2)),
                 ]
             )
             rows.append(row)
