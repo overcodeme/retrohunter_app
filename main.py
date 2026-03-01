@@ -1,5 +1,6 @@
 import flet as ft
 from accounts import AccountsManager
+from projects import ProjectsManager
 
 
 def main(page: ft.Page):
@@ -13,16 +14,19 @@ def main(page: ft.Page):
         content_area.content = new_content
         page.update()
 
+    # Создаем менеджеры
     accounts_manager = AccountsManager(page, update_content_area)
-    
+    projects_manager = ProjectsManager(page, update_content_area, accounts_manager)
+
     def on_menu_click(e: ft.ControlEvent):
         for item in menu_items:
             item.bgcolor = None
+            
 
         if e.control.data == "wallets":
             content_area.content = accounts_manager.get_view()
         elif e.control.data == "projects":
-            content_area.content = projects_view()
+            content_area.content = projects_manager.get_view()
         elif e.control.data == "expenses":
             content_area.content = expenses_view()
         elif e.control.data == "stats":
@@ -30,41 +34,32 @@ def main(page: ft.Page):
 
         page.update()
 
-    def projects_view():
-        return ft.Container(
-            content=ft.Column([
-                ft.Text("Projects management", size=24, weight=ft.FontWeight.BOLD),
-                ft.Text("Here is will be projects list", color=ft.Colors.GREY_400)
-            ]),
-            padding=20
-        )
-
+    # Заглушки для других разделов
     def expenses_view():
         return ft.Container(
             content=ft.Column([
                 ft.Text("Expenses management", size=24, weight=ft.FontWeight.BOLD),
-                ft.Text("Here is will be expenses list", color=ft.Colors.GREY_400)
+                ft.Text("Here will be expenses list", color=ft.Colors.GREY_400)
             ]),
             padding=20
         )
-    
+
     def stats_view():
         return ft.Container(
             content=ft.Column([
                 ft.Text("Statistics", size=24, weight=ft.FontWeight.BOLD),
-                ft.Text("Here is will be statistics", color=ft.Colors.GREY_400)
+                ft.Text("Here will be statistics", color=ft.Colors.GREY_400)
             ]),
             padding=20
         )
 
-
+    # Пункты меню
     menu_items = [
         ft.Container(
             content=ft.Text("Wallets", size=16),
             data="wallets",
             padding=15,
             border_radius=10,
-            ink=True,
             on_click=on_menu_click
         ),
         ft.Container(
@@ -72,7 +67,6 @@ def main(page: ft.Page):
             data="projects",
             padding=15,
             border_radius=10,
-            ink=True,
             on_click=on_menu_click
         ),
         ft.Container(
@@ -80,7 +74,6 @@ def main(page: ft.Page):
             data="expenses",
             padding=15,
             border_radius=10,
-            ink=True,
             on_click=on_menu_click
         ),
         ft.Container(
@@ -88,7 +81,6 @@ def main(page: ft.Page):
             data="stats",
             padding=15,
             border_radius=10,
-            ink=True,
             on_click=on_menu_click
         )
     ]
@@ -98,6 +90,7 @@ def main(page: ft.Page):
         expand=True
     )
 
+    # Подсвечиваем первый пункт меню
     menu_items[0].bgcolor = ft.Colors.BLUE_GREY_700
 
     page.add(

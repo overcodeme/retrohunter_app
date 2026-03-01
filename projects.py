@@ -2,6 +2,8 @@ import flet as ft
 import json
 from pathlib import Path
 from typing import List, Dict, Any, Optional
+from accounts import AccountsManager
+
 
 DATA_DIR = Path("data")
 PROJECTS_FILE = DATA_DIR / "projects.json"
@@ -25,25 +27,28 @@ def save_projects(projects: List[Dict[str, Any]]):
 
 
 class ProjectsManager:
-    def __init__(self, page: ft.Page, update_content_callback, accounts_manager):
+    def __init__(self, page: ft.Page, update_content_callback, accounts_manager: AccountsManager):
         self.page = page
         self.update_content = update_content_callback
-        self.accounts_manager = accounts_manager  # для получения списка аккаунтов
+        self.accounts_manager = accounts_manager
         self.projects = load_projects()
 
         # Поля для диалога добавления/редактирования проекта
         self.name_field = None
         self.desc_field = None
+        self.status_dropdown = None
+        self.type_dropdown = None
+        self.expenses_field = None          # общая сумма расходов
+        self.add_expense_field = None       # поле для добавления расходов
         self.start_field = None
         self.end_field = None
-        self.project_type = None
-        self.status = None
-        self.accounts_checkboxes = []  # список чекбоксов для выбора аккаунтов
+        self.search_field = None
+        self.accounts_list = []
         self.dialog_modal = None
-        self.editing_project_id = None  # для редактирования
+        self.editing_project_id = None      # для редактирования
+        self.current_project_accounts = []  # для хранения выбранных ID при редактировании
 
     def get_view(self) -> ft.Container:
-        """Возвращает представление раздела проектов"""
         header = ft.Row([
             ft.Text("Projects management", size=24, weight=ft.FontWeight.BOLD),
             ft.Container(expand=True),
@@ -58,7 +63,6 @@ class ProjectsManager:
             ),
         ])
 
-        # Статистика: количество проектов
         stats_row = ft.Row([
             ft.Container(
                 content=ft.Row([
@@ -71,7 +75,6 @@ class ProjectsManager:
             )
         ], alignment=ft.MainAxisAlignment.END)
 
-        # Таблица проектов
         projects_table = self._create_projects_table()
 
         return ft.Container(
@@ -87,7 +90,6 @@ class ProjectsManager:
         )
 
     def _create_projects_table(self) -> ft.Container:
-        """Создает таблицу со списком проектов"""
         if not self.projects:
             return ft.Container(
                 content=ft.Column([
@@ -102,7 +104,6 @@ class ProjectsManager:
 
         rows = []
         for proj in self.projects:
-            # Кнопки действий
             edit_btn = ft.IconButton(
                 icon=ft.Icons.EDIT_OUTLINED,
                 icon_color=ft.Colors.BLUE_400,
@@ -118,29 +119,61 @@ class ProjectsManager:
                 on_click=self.delete_project
             )
 
-            # Формируем строку
+            status = proj.get("status", "unknown")
+            status_colors = {
+                "active": ft.Colors.GREEN_400,
+                "waiting": ft.Colors.ORANGE_400,
+                "completed": ft.Colors.BLUE_400,
+                "cancelled": ft.Colors.GREY_400,
+            }
+            status_color = status_colors.get(status, ft.Colors.GREY_400)
+            status_text = ft.Row([
+                ft.Container(width=10, height=10, bgcolor=status_color, border_radius=5),
+                ft.Text(status.capitalize(), size=12),
+            ], spacing=5)
+
+            project_type = proj.get("type", "other").capitalize()
+            accounts_count = len(proj.get("accounts", []))
+
+            expenses = proj.get("expenses", 0)
+            expenses_str = f"${expenses:.2f}" if expenses else "-"
+
+            name = proj.get("name", "")
+            name_text = ft.Text(
+                name,
+                size=12,
+                weight=ft.FontWeight.BOLD,
+                max_lines=1,
+                overflow=ft.TextOverflow.ELLIPSIS,
+                width=150,
+                tooltip=name,
+            )
+
             row = ft.DataRow(
                 cells=[
                     ft.DataCell(ft.Text(str(proj.get("id", "")), size=12)),
-                    ft.DataCell(ft.Text(proj.get("name", ""), size=12, weight=ft.FontWeight.BOLD)),
-                    ft.DataCell(ft.Text(proj.get("description", ""), size=12, max_lines=1, overflow=ft.TextOverflow.ELLIPSIS, width=200)),
+                    ft.DataCell(name_text),
+                    ft.DataCell(ft.Text(project_type, size=12)),
+                    ft.DataCell(status_text),
                     ft.DataCell(ft.Text(proj.get("start_date", ""), size=12)),
                     ft.DataCell(ft.Text(proj.get("end_date", ""), size=12)),
-                    ft.DataCell(ft.Text(str(len(proj.get("accounts", []))), size=12)),  # количество аккаунтов
+                    ft.DataCell(ft.Text(str(accounts_count), size=12)),
+                    ft.DataCell(ft.Text(expenses_str, size=12)),
                     ft.DataCell(ft.Row([edit_btn, delete_btn], spacing=5)),
                 ]
             )
             rows.append(row)
 
-        # Таблица с прокруткой
         table = ft.DataTable(
             columns=[
                 ft.DataColumn(ft.Text("ID", size=12)),
                 ft.DataColumn(ft.Text("Name", size=12)),
-                ft.DataColumn(ft.Text("Description", size=12)),
+                ft.DataColumn(ft.Text("Type", size=12)),
+                ft.DataColumn(ft.Text("Status", size=12)),
                 ft.DataColumn(ft.Text("Start", size=12)),
                 ft.DataColumn(ft.Text("End", size=12)),
-                ft.DataColumn(ft.Text("# Acc", size=12)),
+                ft.DataColumn(ft.Text("Acc", size=12)),
+                ft.DataColumn(ft.Text("Expenses", size=12)),
                 ft.DataColumn(ft.Text("Actions", size=12)),
             ],
             rows=rows,
@@ -150,33 +183,29 @@ class ProjectsManager:
             column_spacing=15,
         )
 
-        # Оборачиваем в контейнер с горизонтальной прокруткой
         return ft.Container(
             content=ft.Row([table], scroll=ft.ScrollMode.ALWAYS),
             height=400,
         )
 
     def open_add_project_dialog(self, e: ft.ControlEvent = None):
-        """Открывает диалог создания нового проекта"""
         self.editing_project_id = None
+        self.current_project_accounts = []
         self._show_project_dialog()
 
     def open_edit_project_dialog(self, e: ft.ControlEvent):
-        """Открывает диалог редактирования проекта"""
         project_id = e.control.data
         self.editing_project_id = project_id
-        # Находим проект по id
         project = next((p for p in self.projects if p["id"] == project_id), None)
         if project:
+            self.current_project_accounts = project.get("accounts", [])
             self._show_project_dialog(project)
 
     def _show_project_dialog(self, project: Optional[Dict] = None):
-        """Показывает диалог добавления/редактирования проекта"""
-        # Поля ввода
+        # Основные поля
         self.name_field = ft.TextField(
-            label="Project Name",
+            label="Project Name *",
             value=project.get("name") if project else "",
-            multiline=False,
         )
         self.desc_field = ft.TextField(
             label="Description",
@@ -184,6 +213,28 @@ class ProjectsManager:
             multiline=True,
             min_lines=2,
             max_lines=4,
+        )
+        self.status_dropdown = ft.Dropdown(
+            label="Status",
+            options=[
+                ft.dropdown.Option("active", "Active"),
+                ft.dropdown.Option("waiting", "Waiting"),
+                ft.dropdown.Option("completed", "Completed"),
+                ft.dropdown.Option("cancelled", "Cancelled"),
+            ],
+            value=project.get("status") if project else "waiting",
+        )
+        self.type_dropdown = ft.Dropdown(
+            label="Project Type",
+            options=[
+                ft.dropdown.Option("testnet", "Testnet"),
+                ft.dropdown.Option("mainnet", "Mainnet"),
+                ft.dropdown.Option("dex", "DEX"),
+                ft.dropdown.Option("social", "Social"),
+                ft.dropdown.Option("gamefi", "GameFi"),
+                ft.dropdown.Option("other", "Other"),
+            ],
+            value=project.get("type") if project else "testnet",
         )
         self.start_field = ft.TextField(
             label="Start Date (YYYY-MM-DD)",
@@ -196,16 +247,45 @@ class ProjectsManager:
             hint_text="2025-12-31",
         )
 
-        # Создаем список чекбоксов для выбора аккаунтов
-        self.accounts_checkboxes = []
-        if self.accounts_manager and self.accounts_manager.accounts:
-            for acc in self.accounts_manager.accounts:
-                cb = ft.Checkbox(
-                    label=f"ID {acc['id']}: {acc.get('email', 'No email')[:30]}",
-                    value=acc["id"] in project.get("accounts", []) if project else False,
-                    data=acc["id"],
-                )
-                self.accounts_checkboxes.append(cb)
+        # Поле общей суммы расходов (редактируемое)
+        self.expenses_field = ft.TextField(
+            label="Total expenses (USD)",
+            value=str(project.get("expenses", "0.0")) if project else "0.0",
+            keyboard_type=ft.KeyboardType.NUMBER,
+            hint_text="0.00",
+            width=200,
+        )
+
+        # Поле для добавления расходов и кнопка "+"
+        self.add_expense_field = ft.TextField(
+            label="Add expense",
+            keyboard_type=ft.KeyboardType.NUMBER,
+            hint_text="0.00",
+            width=150,
+        )
+        add_btn = ft.IconButton(
+            icon=ft.Icons.ADD_CIRCLE_OUTLINE,
+            icon_color=ft.Colors.GREEN_400,
+            tooltip="Add to total",
+            on_click=self.add_expense_to_total,
+        )
+        expenses_row = ft.Row([self.expenses_field, self.add_expense_field, add_btn], alignment=ft.MainAxisAlignment.START)
+
+        # Поиск аккаунтов
+        self.search_field = ft.TextField(
+            label="Search accounts",
+            prefix_icon=ft.Icons.SEARCH,
+            on_change=self.filter_accounts,
+            hint_text="Type to filter by private key or email",
+        )
+
+        # Кнопки управления выделением
+        select_all_btn = ft.TextButton("Select All", on_click=self.select_all_accounts)
+        clear_all_btn = ft.TextButton("Clear All", on_click=self.clear_all_accounts)
+
+        # Контейнер для списка аккаунтов
+        self.accounts_list = ft.Column(scroll=ft.ScrollMode.AUTO, height=300)
+        self._build_accounts_list()  # заполняем список
 
         # Диалог
         self.dialog_modal = ft.AlertDialog(
@@ -215,20 +295,22 @@ class ProjectsManager:
                 content=ft.Column([
                     self.name_field,
                     self.desc_field,
+                    ft.Row([self.status_dropdown, self.type_dropdown], spacing=10),
                     ft.Row([self.start_field, self.end_field], spacing=10),
+                    expenses_row,
+                    ft.Divider(height=10, color=ft.Colors.GREY_800),
                     ft.Text("Select accounts for this project:", size=14, weight=ft.FontWeight.BOLD),
+                    ft.Row([select_all_btn, clear_all_btn], alignment=ft.MainAxisAlignment.START),
+                    self.search_field,
                     ft.Container(
-                        content=ft.Column(
-                            self.accounts_checkboxes,
-                            scroll=ft.ScrollMode.AUTO,
-                            height=200,
-                        ),
+                        content=self.accounts_list,
                         border=ft.Border.all(1, ft.Colors.GREY_800),
                         border_radius=5,
                         padding=10,
-                    ) if self.accounts_checkboxes else ft.Text("No accounts available", color=ft.Colors.GREY_400),
-                ], scroll=ft.ScrollMode.AUTO, height=500),
-                width=600,
+                        height=300,
+                    ),
+                ], scroll=ft.ScrollMode.AUTO, height=650),
+                width=750,
             ),
             actions=[
                 ft.TextButton("Cancel", on_click=self.close_dialog),
@@ -241,44 +323,113 @@ class ProjectsManager:
         self.dialog_modal.open = True
         self.page.update()
 
+    def _build_accounts_list(self, filter_text: str = ""):
+        """Заполняет accounts_list чекбоксами на основе фильтра"""
+        if not self.accounts_manager or not self.accounts_manager.accounts:
+            self.accounts_list.controls = [ft.Text("No accounts available", color=ft.Colors.GREY_400)]
+            return
+
+        checkboxes = []
+        filter_text = filter_text.lower()
+        for acc in self.accounts_manager.accounts:
+            # Формируем строку для поиска (объединяем все поля, по которым ищем)
+            searchable_string = (
+                f"id:{acc['id']} "
+                f"evm:{acc.get('evm_private_key', '')} "
+                f"sol:{acc.get('sol_private_key', '')} "
+                f"email:{acc.get('email', '')}"
+            ).lower()
+            
+            # Если фильтр не пустой и не содержится в searchable_string, пропускаем
+            if filter_text and filter_text not in searchable_string:
+                continue
+
+            # Лейбл остаётся прежним (ID + email)
+            label = f"ID {acc['id']}: {acc.get('email', 'No email')[:40]}"
+            cb = ft.Checkbox(
+                label=label,
+                value=acc["id"] in self.current_project_accounts,
+                data=acc["id"],
+            )
+            checkboxes.append(cb)
+
+        self.accounts_list.controls = checkboxes if checkboxes else [ft.Text("No matching accounts", color=ft.Colors.GREY_400)]
+        self.page.update()
+
+    def add_expense_to_total(self, e):
+        """Прибавляет введённую сумму к полю общих расходов."""
+        try:
+            current = float(self.expenses_field.value or "0")
+            add_amount = float(self.add_expense_field.value or "0")
+            if add_amount > 0:
+                self.expenses_field.value = f"{current + add_amount:.2f}"
+                self.add_expense_field.value = ""
+                self.page.update()
+        except ValueError:
+            pass
+
+    def filter_accounts(self, e):
+        self._build_accounts_list(self.search_field.value)
+
+    def select_all_accounts(self, e):
+        for cb in self.accounts_list.controls:
+            if isinstance(cb, ft.Checkbox):
+                cb.value = True
+        self.page.update()
+
+    def clear_all_accounts(self, e):
+        for cb in self.accounts_list.controls:
+            if isinstance(cb, ft.Checkbox):
+                cb.value = False
+        self.page.update()
+
     def close_dialog(self, e: ft.ControlEvent = None):
         self.dialog_modal.open = False
         self.page.update()
 
     def save_project(self, e: ft.ControlEvent = None):
-        """Сохраняет проект (новый или обновленный)"""
-        # Собираем данные
         name = self.name_field.value.strip()
         if not name:
-            # Можно показать ошибку, но пока просто вернемся
+            # можно показать предупреждение, но для простоты пропустим
             return
 
-        # Получаем выбранные аккаунты
+        # Собираем выбранные аккаунты
         selected_accounts = [
-            cb.data for cb in self.accounts_checkboxes if cb.value
+            cb.data for cb in self.accounts_list.controls
+            if isinstance(cb, ft.Checkbox) and cb.value
         ]
 
+        # Получаем сумму из поля
+        try:
+            expenses = float(self.expenses_field.value or "0")
+        except ValueError:
+            expenses = 0.0
+
         if self.editing_project_id is None:
-            # Новый проект
             new_id = max([p["id"] for p in self.projects], default=0) + 1
             new_project = {
                 "id": new_id,
                 "name": name,
                 "description": self.desc_field.value,
+                "status": self.status_dropdown.value,
+                "type": self.type_dropdown.value,
                 "start_date": self.start_field.value,
                 "end_date": self.end_field.value,
+                "expenses": expenses,
                 "accounts": selected_accounts,
             }
             self.projects.append(new_project)
         else:
-            # Обновляем существующий
             for proj in self.projects:
                 if proj["id"] == self.editing_project_id:
                     proj.update({
                         "name": name,
                         "description": self.desc_field.value,
+                        "status": self.status_dropdown.value,
+                        "type": self.type_dropdown.value,
                         "start_date": self.start_field.value,
                         "end_date": self.end_field.value,
+                        "expenses": expenses,
                         "accounts": selected_accounts,
                     })
                     break
@@ -288,7 +439,6 @@ class ProjectsManager:
         self.update_content(self.get_view())
 
     def delete_project(self, e: ft.ControlEvent):
-        """Удаляет проект по ID"""
         project_id = e.control.data
         self.projects = [p for p in self.projects if p["id"] != project_id]
         save_projects(self.projects)
