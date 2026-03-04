@@ -21,7 +21,6 @@ def main(page: ft.Page):
     def on_menu_click(e: ft.ControlEvent):
         for item in menu_items:
             item.bgcolor = None
-            
 
         if e.control.data == "wallets":
             content_area.content = accounts_manager.get_view()

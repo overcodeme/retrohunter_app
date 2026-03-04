@@ -38,7 +38,7 @@ class ProjectsManager:
         self.desc_field = None
         self.status_dropdown = None
         self.type_dropdown = None
-        self.expenses_field = None          # общая сумма расходов
+        self.expenses_field = None          
         self.add_expense_field = None       # поле для добавления расходов
         self.start_field = None
         self.end_field = None
@@ -319,8 +319,7 @@ class ProjectsManager:
             actions_alignment=ft.MainAxisAlignment.END,
         )
 
-        self.page.dialog = self.dialog_modal
-        self.dialog_modal.open = True
+        self.page.show_dialog(self.dialog_modal)
         self.page.update()
 
     def _build_accounts_list(self, filter_text: str = ""):
