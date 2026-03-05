@@ -1,6 +1,7 @@
 import flet as ft
 from accounts import AccountsManager
 from projects import ProjectsManager
+from expenses import ExpensesManager
 
 
 def main(page: ft.Page):
@@ -14,40 +15,37 @@ def main(page: ft.Page):
         content_area.content = new_content
         page.update()
 
-    # Создаем менеджеры
     accounts_manager = AccountsManager(page, update_content_area)
     projects_manager = ProjectsManager(page, update_content_area, accounts_manager)
+    expenses_manager = ExpensesManager(page, update_content_area, accounts_manager, projects_manager)
 
     def on_menu_click(e: ft.ControlEvent):
         for item in menu_items:
             item.bgcolor = None
+            if isinstance(item.content, ft.Text):
+                item.content.color = None
+
+        e.control.bgcolor = ft.Colors.BLUE_700
+        if isinstance(e.control.content, ft.Text):
+            e.control.content.color = ft.Colors.WHITE
 
         if e.control.data == "wallets":
             content_area.content = accounts_manager.get_view()
         elif e.control.data == "projects":
             content_area.content = projects_manager.get_view()
         elif e.control.data == "expenses":
-            content_area.content = expenses_view()
+            content_area.content = expenses_manager.get_view()
         elif e.control.data == "stats":
             content_area.content = stats_view()
 
         page.update()
 
-    # Заглушки для других разделов
-    def expenses_view():
-        return ft.Container(
-            content=ft.Column([
-                ft.Text("Expenses management", size=24, weight=ft.FontWeight.BOLD),
-                ft.Text("Here will be expenses list", color=ft.Colors.GREY_400)
-            ]),
-            padding=20
-        )
-
+    # Заглушка для статистики (пока пусто)
     def stats_view():
         return ft.Container(
             content=ft.Column([
                 ft.Text("Statistics", size=24, weight=ft.FontWeight.BOLD),
-                ft.Text("Here will be statistics", color=ft.Colors.GREY_400)
+                ft.Text("Coming soon...", color=ft.Colors.GREY_400)
             ]),
             padding=20
         )
@@ -89,25 +87,20 @@ def main(page: ft.Page):
         expand=True
     )
 
-    # Подсвечиваем первый пункт меню
-    menu_items[0].bgcolor = ft.Colors.BLUE_GREY_700
+    menu_items[0].bgcolor = ft.Colors.BLUE_700
+    if isinstance(menu_items[0].content, ft.Text):
+        menu_items[0].content.color = ft.Colors.WHITE
 
     page.add(
         ft.Row([
             ft.Container(
-                content=ft.Column(
-                    menu_items,
-                    spacing=5
-                ),
+                content=ft.Column(menu_items, spacing=5),
                 width=200,
                 padding=10,
                 border=ft.Border.all(1, ft.Colors.GREY_800)
             ),
             content_area
-        ],
-        expand=True,
-        vertical_alignment=ft.CrossAxisAlignment.STRETCH
-        )
+        ], expand=True, vertical_alignment=ft.CrossAxisAlignment.STRETCH)
     )
 
     page.update()
