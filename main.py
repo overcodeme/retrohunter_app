@@ -57,28 +57,32 @@ def main(page: ft.Page):
             data="wallets",
             padding=15,
             border_radius=10,
-            on_click=on_menu_click
+            on_click=on_menu_click,
+            alignment=ft.Alignment.CENTER
         ),
         ft.Container(
             content=ft.Text("Projects", size=16),
             data="projects",
             padding=15,
             border_radius=10,
-            on_click=on_menu_click
+            on_click=on_menu_click,
+            alignment=ft.Alignment.CENTER
         ),
         ft.Container(
             content=ft.Text("Expenses", size=16),
             data="expenses",
             padding=15,
             border_radius=10,
-            on_click=on_menu_click
+            on_click=on_menu_click,
+            alignment=ft.Alignment.CENTER
         ),
         ft.Container(
             content=ft.Text("Statistics", size=16),
             data="stats",
             padding=15,
             border_radius=10,
-            on_click=on_menu_click
+            on_click=on_menu_click,
+            alignment=ft.Alignment.CENTER
         )
     ]
 

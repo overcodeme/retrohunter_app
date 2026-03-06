@@ -202,7 +202,6 @@ class ProjectsManager:
             self._show_project_dialog(project)
 
     def _show_project_dialog(self, project: Optional[Dict] = None):
-        # Основные поля
         self.name_field = ft.TextField(
             label="Project Name *",
             value=project.get("name") if project else "",

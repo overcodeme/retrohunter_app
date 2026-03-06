@@ -1,6 +1,6 @@
 import flet as ft
 import json
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from pathlib import Path
 
 
@@ -33,13 +33,13 @@ class AccountsManager:
         self.update_content = update_content_callback
         self.accounts = load_accounts()
 
-        # Поля для диалога добавления
         self.evm_field = None
         self.sol_field = None
         self.email_field = None
         self.twitter_field = None
         self.discord_field = None
         self.dialog_modal = None
+        self.editing_account_id = None
 
     @staticmethod
     def centered_header(text: str, width: int = 100) -> ft.DataColumn:
@@ -50,10 +50,10 @@ class AccountsManager:
                     text, 
                     size=12, 
                     weight=ft.FontWeight.BOLD,
-                    text_align=ft.TextAlign.CENTER,  # Выравнивание текста
+                    text_align=ft.TextAlign.CENTER,
                 ),
-                width=width,  # Фиксированная ширина
-                alignment=ft.Alignment.CENTER,  # Выравнивание контейнера
+                width=width, 
+                alignment=ft.Alignment.CENTER,
             )
         )
 
@@ -63,10 +63,10 @@ class AccountsManager:
         table_rows = self._create_table_rows()
 
         header = ft.Row([
-            ft.Text("Wallets management", size=24, weight=ft.FontWeight.BOLD),
+            ft.Text("Wallets list", size=24, weight=ft.FontWeight.BOLD),
             ft.Container(expand=True),
             ft.ElevatedButton(
-                "Add account",
+                "Add wallet",
                 icon=ft.Icons.ADD,
                 on_click=self.open_add_account_dialog,
                 style=ft.ButtonStyle(
@@ -76,7 +76,6 @@ class AccountsManager:
             ),
         ])
 
-        # Вывод статистики (общее кол-во аккаунтов)
         stats_row = ft.Row([
             ft.Container(
                 content=ft.Row([
@@ -89,11 +88,10 @@ class AccountsManager:
             )
         ], alignment=ft.MainAxisAlignment.END)
 
-        # Вывод аккаунтов
         if self.accounts:
             table = ft.DataTable(
                 columns=[
-                    ft.DataColumn(ft.Text("ID", size=12)),
+                    ft.DataColumn(ft.Text("№", size=12)),
                     self.centered_header("EVM Key", 120),
                     self.centered_header("Solana Key", 120),
                     self.centered_header("Email", 150),
@@ -111,15 +109,14 @@ class AccountsManager:
             table_container = ft.Container(
                 content=ft.Row([
                     table
-                ], scroll=ft.ScrollMode.ALWAYS),
-                height=400
+                ], scroll=ft.ScrollMode.ALWAYS)
             )
         else:
             table_container = ft.Container(
                 content=ft.Column([
                     ft.Icon(ft.Icons.ACCOUNT_BALANCE_OUTLINED, size=64, color=ft.Colors.GREY_600),
-                    ft.Text("No accounts yet", size=20, color=ft.Colors.GREY_400),
-                    ft.Text("Click 'Add account' to add an account", color=ft.Colors.GREY_500),
+                    ft.Text("No wallets yet", size=20, color=ft.Colors.GREY_400),
+                    ft.Text("Click 'Add wallet' to add a wallet", color=ft.Colors.GREY_500),
                 ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
                 padding=50,
                 alignment=ft.Alignment.CENTER,
@@ -132,7 +129,6 @@ class AccountsManager:
                 ft.Divider(height=20, color=ft.Colors.GREY_800),
                 stats_row,
                 ft.Container(height=20),
-                ft.Text("Accounts list", size=18, weight=ft.FontWeight.BOLD),
                 table_container
             ]),
             padding=20
@@ -140,26 +136,28 @@ class AccountsManager:
 
         
     def _create_table_rows(self) -> List[ft.DataRow]:
-        """Создает строки таблицы с аккаунтами"""
         rows = []
 
         for acc in self.accounts:
             delete_btn = ft.IconButton(
                 icon=ft.Icons.DELETE_OUTLINE,
                 icon_color=ft.Colors.RED_400,
-                tooltip="Delete account",
+                tooltip="Delete an account",
                 data=acc.get("id"),
                 on_click=self.delete_account,
                 width=32,
+                padding=0,
                 height=32
             )
 
             edit_btn = ft.IconButton(
                 icon=ft.Icons.EDIT_OUTLINED,
                 icon_color=ft.Colors.BLUE_400,
-                tooltip="Edit account (coming soon)",
-                disabled=True,
+                tooltip="Edit an account",
+                data=acc.get("id"),
+                on_click=self.open_edit_account_dialog,
                 width=32,
+                padding=0,
                 height=32
             )
 
@@ -186,7 +184,7 @@ class AccountsManager:
                 max_lines=1,
                 overflow=ft.TextOverflow.ELLIPSIS,
                 width=120,
-                tooltip=acc.get("sol_private_key", ""),  # Всплывающая подсказка с полным значением
+                tooltip=acc.get("sol_private_key", ""),  
             )
 
             email_text = ft.Text(
@@ -196,7 +194,7 @@ class AccountsManager:
                 max_lines=1,
                 overflow=ft.TextOverflow.ELLIPSIS,
                 width=150,
-                tooltip=acc.get("email", ""),  # Всплывающая подсказка с полным значением
+                tooltip=acc.get("email", ""), 
             )
 
             twitter_text = ft.Text(
@@ -235,53 +233,59 @@ class AccountsManager:
         return rows
 
 
-    def add_account(self, e: ft.ControlEvent = None):  # Добавлен параметр
-        """Добавление нового аккаунта"""
-        max_id = max([acc.get("id", 0) for acc in self.accounts]) if self.accounts else 0
-
-        new_account = {
-            "id": max_id + 1,
-            "evm_private_key": self.evm_field.value or "",
-            "sol_private_key": self.sol_field.value or "",  # Унифицировано
-            "email": self.email_field.value or "",
-            "twitter_token": self.twitter_field.value or "",
-            "discord_token": self.discord_field.value or ""
-        }
-
-        self.accounts.append(new_account)
-        save_accounts(self.accounts)
-
-        self.evm_field.value = ""
-        self.sol_field.value = ""
-        self.email_field.value = ""
-        self.twitter_field.value = ""
-        self.discord_field.value = ""
-
-        self.dialog_modal.open = False
-        self.page.update()
-
-        self.update_content(self.get_view())
+    def open_add_account_dialog(self, e: ft.ControlEvent = None):
+        self.editing_account_id = None
+        self._show_account_dialog()
 
 
-    def delete_account(self, e: ft.ControlEvent):
-        """Удаление аккаунта по ID"""
+    def open_edit_account_dialog(self, e: ft.ControlEvent = None):
         account_id = e.control.data
-        self.accounts = [acc for acc in self.accounts if acc.get("id") != account_id]
-        save_accounts(self.accounts)
-        self.update_content(self.get_view())
+        self.editing_account_id = account_id
+        account = next((acc for acc in self.accounts if acc["id"] == account_id), None)
+        if account:
+            self._show_account_dialog(account)
 
-
-    def open_add_account_dialog(self, e: ft.ControlEvent = None):  # Добавлен параметр
-        """Открытие диалога для добавления нового аккаунта"""
-        self.evm_field = ft.TextField(label="EVM Private Key", multiline=True, min_lines=1, max_lines=3)
-        self.sol_field = ft.TextField(label="Solana Private Key", multiline=True, min_lines=1, max_lines=3)  # Исправлено
-        self.email_field = ft.TextField(label="Email (log:pass)", multiline=True, min_lines=1, max_lines=3)
-        self.twitter_field = ft.TextField(label="Twitter token", multiline=True, min_lines=1, max_lines=3)
-        self.discord_field = ft.TextField(label="Discord token", multiline=True, min_lines=1, max_lines=3)
+    
+    def _show_account_dialog(self, account: Optional[Dict] = None):
+        self.evm_field = ft.TextField(
+            label="EVM Private Key",
+            value=account.get("evm_private_key") if account else "",
+            multiline=True,
+            min_lines=1,
+            max_lines=3
+        )
+        self.sol_field = ft.TextField(
+            label="Solana Private Key",
+            value=account.get("sol_private_key") if account else "",
+            multiline=True,
+            min_lines=1,
+            max_lines=3
+        )
+        self.email_field = ft.TextField(
+            label="Email (log:pass)",
+            value=account.get("email") if account else "",
+            multiline=True,
+            min_lines=1,
+            max_lines=3
+        )
+        self.twitter_field = ft.TextField(
+            label="Twitter token",
+            value=account.get("twitter_token") if account else "",
+            multiline=True,
+            min_lines=1,
+            max_lines=3
+        )
+        self.discord_field = ft.TextField(
+            label="Discord token",
+            value=account.get("discord_token") if account else "",
+            multiline=True,
+            min_lines=1,
+            max_lines=3
+        )
 
         self.dialog_modal = ft.AlertDialog(
             modal=True,
-            title=ft.Text("Add new account"),
+            title=ft.Text("Edit an account" if account else "Add new account"),
             content=ft.Container(
                 content=ft.Column([
                     self.evm_field,
@@ -290,19 +294,54 @@ class AccountsManager:
                     self.twitter_field,
                     self.discord_field
                 ], scroll=ft.ScrollMode.AUTO, height=400),
-                width=500,
+                width=500
             ),
             actions=[
-                ft.TextButton("Add", on_click=self.add_account),
-                ft.TextButton("Cancel", on_click=self.close_add_account_dialog)
+                ft.TextButton("Add", on_click=self.save_account),
+                ft.TextButton("Cancel", on_click=self.close_dialog)
             ],
-            actions_alignment=ft.MainAxisAlignment.END,
+            actions_alignment=ft.MainAxisAlignment.END
         )
 
         self.page.show_dialog(self.dialog_modal)
         self.page.update()
 
-    
-    def close_add_account_dialog(self, e: ft.ControlEvent = None):  # Добавлен параметр
+
+    def save_account(self, e: ft.ControlEvent = None):
+        if self.editing_account_id is None:
+            new_id = max([acc["id"] for acc in self.accounts], default=0) + 1
+            new_account = {
+                "id": new_id,
+                "evm_private_key": self.evm_field.value,
+                "sol_private_key": self.sol_field.value,
+                "email": self.email_field.value,
+                "twitter_token": self.twitter_field.value,
+                "discord_token": self.discord_field.value
+            }
+            self.accounts.append(new_account)
+        else:
+            for acc in self.accounts:
+                if acc["id"] == self.editing_account_id:
+                    acc.update({
+                        "evm_private_key": self.evm_field.value,
+                        "sol_private_key": self.sol_field.value,
+                        "email": self.email_field.value,
+                        "twitter_token": self.twitter_field.value,
+                        "discord_token": self.discord_field.value 
+                    })
+                    break
+        save_accounts(self.accounts)
+        self.close_dialog()
+        self.update_content(self.get_view())
+
+
+    def close_dialog(self, e: ft.ControlEvent = None):
         self.dialog_modal.open = False
         self.page.update()
+
+    
+    def delete_account(self, e: ft.ControlEvent):
+        account_id = e.control.data
+        self.accounts = [acc for acc in self.accounts if acc.get("id") != account_id]
+        save_accounts(self.accounts)
+        self.update_content(self.get_view())
