@@ -50,7 +50,7 @@ class ProjectsManager:
 
     def get_view(self) -> ft.Container:
         header = ft.Row([
-            ft.Text("Projects management", size=24, weight=ft.FontWeight.BOLD),
+            ft.Text("Projects list", size=24, weight=ft.FontWeight.BOLD),
             ft.Container(expand=True),
             ft.ElevatedButton(
                 "Add project",
@@ -73,7 +73,7 @@ class ProjectsManager:
                 border_radius=20,
                 bgcolor=ft.Colors.GREY_900
             )
-        ], alignment=ft.MainAxisAlignment.END)
+        ], alignment=ft.MainAxisAlignment.START)
 
         projects_table = self._create_projects_table()
 
@@ -83,7 +83,6 @@ class ProjectsManager:
                 ft.Divider(height=20, color=ft.Colors.GREY_800),
                 stats_row,
                 ft.Container(height=20),
-                ft.Text("Projects list", size=18, weight=ft.FontWeight.BOLD),
                 projects_table
             ]),
             padding=20
@@ -343,7 +342,7 @@ class ProjectsManager:
                 continue
 
             # Лейбл остаётся прежним (ID + email)
-            label = f"ID {acc['id']}: {acc.get('email', 'No email')[:40]}"
+            label = f"Mult {acc['id']}"
             cb = ft.Checkbox(
                 label=label,
                 value=acc["id"] in self.current_project_accounts,
