@@ -40,7 +40,6 @@ def main(page: ft.Page):
 
         page.update()
 
-    # Заглушка для статистики (пока пусто)
     def stats_view():
         return ft.Container(
             content=ft.Column([
@@ -50,7 +49,6 @@ def main(page: ft.Page):
             padding=20
         )
 
-    # Пункты меню
     menu_items = [
         ft.Container(
             content=ft.Text("Wallets", size=16),

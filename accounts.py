@@ -30,7 +30,6 @@ class AccountsManager:
         self.update_content = update_content_callback
         self.accounts = load_accounts()
 
-        # Поля для диалога
         self.evm_field = None
         self.sol_field = None
         self.email_field = None
@@ -39,7 +38,6 @@ class AccountsManager:
         self.dialog_modal = None
         self.editing_account_id = None
 
-        # Диалог для импорта
         self.import_dialog = None
         self.import_text_field = None
 
@@ -50,7 +48,7 @@ class AccountsManager:
             ft.Container(
                 content=ft.Text(
                     text,
-                    size=12,
+                    size=14,                     
                     weight=ft.FontWeight.BOLD,
                     text_align=ft.TextAlign.CENTER,
                 ),
@@ -63,7 +61,6 @@ class AccountsManager:
         """Возвращает представление раздела аккаунтов"""
         table_rows = self._create_table_rows()
 
-        # Заголовок с двумя кнопками
         header = ft.Row([
             ft.Text("Wallets list", size=24, weight=ft.FontWeight.BOLD),
             ft.Container(expand=True),
@@ -87,7 +84,6 @@ class AccountsManager:
             ),
         ])
 
-        # Статистика
         stats_row = ft.Row([
             ft.Container(
                 content=ft.Row([
@@ -98,29 +94,30 @@ class AccountsManager:
                 border_radius=20,
                 bgcolor=ft.Colors.GREY_900,
             )
-        ], alignment=ft.MainAxisAlignment.END)
+        ], alignment=ft.MainAxisAlignment.START)
 
-        # Таблица или заглушка
         if self.accounts:
             table = ft.DataTable(
                 columns=[
-                    ft.DataColumn(ft.Text("№", size=12)),
-                    self.centered_header("EVM Key", 120),
-                    self.centered_header("Solana Key", 120),
-                    self.centered_header("Email", 150),
-                    self.centered_header("Twitter", 120),
-                    self.centered_header("Discord", 120),
-                    self.centered_header("Actions", 80),
+                    ft.DataColumn(ft.Text("№", size=14)),  
+                    self.centered_header("EVM Key", 180),  
+                    self.centered_header("Solana Key", 180),
+                    self.centered_header("Email", 200),
+                    self.centered_header("Twitter", 180),
+                    self.centered_header("Discord", 180),
+                    self.centered_header("Actions", 100),
                 ],
                 rows=table_rows,
                 border=ft.Border.all(1, ft.Colors.GREY_800),
                 vertical_lines=ft.BorderSide(1, ft.Colors.GREY_800),
                 horizontal_lines=ft.BorderSide(1, ft.Colors.GREY_800),
-                column_spacing=15,
+                column_spacing=20,                 
+                heading_row_height=50,             
+                data_row_min_height=48,                
             )
             table_container = ft.Container(
                 content=ft.Row([table], scroll=ft.ScrollMode.ALWAYS),
-                height=400,
+                alignment=ft.Alignment.CENTER
             )
         else:
             table_container = ft.Container(
@@ -148,7 +145,6 @@ class AccountsManager:
     def _create_table_rows(self) -> List[ft.DataRow]:
         rows = []
         for acc in self.accounts:
-            # Кнопка удаления с центровкой
             delete_btn = ft.IconButton(
                 icon=ft.Icons.DELETE_OUTLINE,
                 icon_color=ft.Colors.RED_400,
@@ -160,7 +156,6 @@ class AccountsManager:
                 padding=0,
                 icon_size=20,
             )
-            # Кнопка редактирования с центровкой и data
             edit_btn = ft.IconButton(
                 icon=ft.Icons.EDIT_OUTLINED,
                 icon_color=ft.Colors.BLUE_400,
@@ -173,68 +168,67 @@ class AccountsManager:
                 icon_size=20,
             )
 
-            id_text = ft.Text(str(acc.get("id", "")), size=12, width=40)
+            id_text = ft.Text(str(acc.get("id", "")), size=14, width=30)  
             evm_text = ft.Text(
                 acc.get("evm_private_key", ""),
-                size=12,
+                size=14,                             
                 selectable=True,
                 max_lines=1,
                 overflow=ft.TextOverflow.ELLIPSIS,
-                width=120,
+                width=180,                            
                 tooltip=acc.get("evm_private_key", ""),
             )
             sol_text = ft.Text(
                 acc.get("sol_private_key", ""),
-                size=12,
+                size=14,
                 selectable=True,
                 max_lines=1,
                 overflow=ft.TextOverflow.ELLIPSIS,
-                width=120,
+                width=180,
                 tooltip=acc.get("sol_private_key", ""),
             )
             email_text = ft.Text(
                 acc.get("email", ""),
-                size=12,
+                size=14,
                 selectable=True,
                 max_lines=1,
                 overflow=ft.TextOverflow.ELLIPSIS,
-                width=150,
+                width=200,
                 tooltip=acc.get("email", ""),
             )
             twitter_text = ft.Text(
                 acc.get("twitter_token", ""),
-                size=12,
+                size=14,
                 selectable=True,
                 max_lines=1,
                 overflow=ft.TextOverflow.ELLIPSIS,
-                width=120,
+                width=180,
                 tooltip=acc.get("twitter_token", ""),
             )
             discord_text = ft.Text(
                 acc.get("discord_token", ""),
-                size=12,
+                size=14,
                 selectable=True,
                 max_lines=1,
                 overflow=ft.TextOverflow.ELLIPSIS,
-                width=120,
+                width=180,
                 tooltip=acc.get("discord_token", ""),
             )
 
             row = ft.DataRow(
                 cells=[
-                    ft.DataCell(id_text),
+                    ft.DataCell(ft.Row(id_text, alignment=ft.MainAxisAlignment.CENTER)),
                     ft.DataCell(evm_text),
                     ft.DataCell(sol_text),
                     ft.DataCell(email_text),
                     ft.DataCell(twitter_text),
                     ft.DataCell(discord_text),
-                    ft.DataCell(ft.Row([edit_btn, delete_btn], spacing=2)),
+                    ft.DataCell(ft.Row([edit_btn, delete_btn], spacing=2, alignment=ft.MainAxisAlignment.CENTER)),
                 ]
             )
             rows.append(row)
         return rows
 
-    # ---------- ИМПОРТ ЧЕРЕЗ ТЕКСТОВОЕ ПОЛЕ ----------
     def open_import_dialog(self, e: ft.ControlEvent = None):
         """Открывает диалог для вставки данных из txt файла"""
         self.import_text_field = ft.TextField(
@@ -242,7 +236,7 @@ class AccountsManager:
             multiline=True,
             min_lines=10,
             max_lines=20,
-            hint_text="Format: evm_key sol_key email twitter_token discord_token\nSeparated by spaces or tabs",
+            hint_text="Format: evm_key|sol_key|email|twitter_token|discord_token",
         )
 
         self.import_dialog = ft.AlertDialog(
@@ -251,7 +245,7 @@ class AccountsManager:
             content=ft.Container(
                 content=ft.Column([
                     self.import_text_field,
-                    ft.Text("Each line should contain 5 fields: EVM, Solana, Email, Twitter, Discord", size=12, color=ft.Colors.GREY_400),
+                    ft.Text("Each line should contain 5 fields separated by '|'", size=12, color=ft.Colors.GREY_400),
                 ], scroll=ft.ScrollMode.AUTO),
                 width=600,
                 padding=10,
@@ -272,7 +266,7 @@ class AccountsManager:
             self.page.update()
 
     def import_from_text(self, e: ft.ControlEvent = None):
-        """Парсит вставленный текст и добавляет аккаунты"""
+        """Парсит вставленный текст (разделитель |) и добавляет аккаунты"""
         text = self.import_text_field.value
         if not text:
             return
@@ -286,19 +280,16 @@ class AccountsManager:
             if not line or line.startswith('#'):
                 continue
 
-            # Разделяем по пробелам или табуляции
-            parts = line.split('\t')
+            parts = [part.strip() for part in line.split('|')]
             if len(parts) < 5:
-                parts = line.split()
-            if len(parts) < 5:
-                print(f"Line {line_num}: insufficient fields ({len(parts)}), skipped.")
+                print(f"Line {line_num}: недостаточно полей ({len(parts)}), ожидается 5, разделённых '|'.")
                 continue
 
-            evm = parts[0].strip()
-            sol = parts[1].strip()
-            email = parts[2].strip()
-            twitter = parts[3].strip()
-            discord = parts[4].strip()
+            evm = parts[0]
+            sol = parts[1]
+            email = parts[2]
+            twitter = parts[3]
+            discord = parts[4]
 
             max_id += 1
             new_accounts.append({
@@ -316,10 +307,8 @@ class AccountsManager:
             self.close_import_dialog()
             self.update_content(self.get_view())
         else:
-            # Можно показать ошибку
-            print("No valid accounts found.")
+            print("Нет корректных аккаунтов для импорта.")
 
-    # ---------- ДИАЛОГ ДОБАВЛЕНИЯ/РЕДАКТИРОВАНИЯ ----------
     def open_add_account_dialog(self, e: ft.ControlEvent = None):
         self.editing_account_id = None
         self._show_account_dialog()
