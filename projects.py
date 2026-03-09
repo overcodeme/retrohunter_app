@@ -38,16 +38,90 @@ class ProjectsManager:
         self.desc_field = None
         self.status_dropdown = None
         self.type_dropdown = None
-        self.expenses_field = None          
-        self.add_expense_field = None       # поле для добавления расходов
+        self.expenses_field = None
+        self.add_expense_field = None
         self.start_field = None
         self.end_field = None
         self.search_field = None
-        self.accounts_list = []
+        self.accounts_list = None
         self.dialog_modal = None
-        self.editing_project_id = None      # для редактирования
-        self.current_project_accounts = []  # для хранения выбранных ID при редактировании
+        self.editing_project_id = None
+        self.current_project_accounts = []
 
+    # ----- Вспомогательные методы для кастомной таблицы -----
+    @staticmethod
+    def centered_header(text: str, width: int) -> ft.Container:
+        """Ячейка заголовка с центрированием (без переноса)"""
+        return ft.Container(
+            content=ft.Text(
+                text,
+                size=16,
+                weight=ft.FontWeight.BOLD,
+                text_align=ft.TextAlign.CENTER,
+                max_lines=1,
+                overflow=ft.TextOverflow.ELLIPSIS,
+            ),
+            width=width,
+            alignment=ft.Alignment.CENTER,
+            padding=5,
+        )
+
+    @staticmethod
+    def centered_cell(text: str, width: int, tooltip: str = "", multiline: bool = False, size = 15) -> ft.Container:
+        """
+        Ячейка данных с центрированием.
+        Если multiline=True, текст может переноситься на несколько строк.
+        """
+        if multiline:
+            # Для многострочного текста не ограничиваем количество строк
+            text_widget = ft.Text(
+                text,
+                size=size,
+                selectable=True,
+                text_align=ft.TextAlign.CENTER,
+                no_wrap=False,  # разрешаем перенос
+            )
+        else:
+            # Для остальных – одна строка с обрезанием
+            text_widget = ft.Text(
+                text,
+                size=size,
+                selectable=True,
+                max_lines=1,
+                overflow=ft.TextOverflow.ELLIPSIS,
+                text_align=ft.TextAlign.CENTER,
+            )
+
+        return ft.Container(
+            content=text_widget,
+            width=width,
+            alignment=ft.Alignment.CENTER,
+            padding=ft.padding.only(left=8, right=8, top=4, bottom=4),
+            tooltip=tooltip if not multiline else None,  # подсказка не нужна, если текст виден полностью
+        )
+
+    @staticmethod
+    def centered_status_cell(status: str, width: int) -> ft.Container:
+        """Ячейка статуса с цветным кружком и текстом (центрирована, одна строка)"""
+        status_colors = {
+            "active": ft.Colors.GREEN_400,
+            "waiting": ft.Colors.ORANGE_400,
+            "completed": ft.Colors.BLUE_400,
+            "cancelled": ft.Colors.GREY_400,
+        }
+        color = status_colors.get(status, ft.Colors.GREY_400)
+        content = ft.Row([
+            ft.Container(width=12, height=12, bgcolor=color, border_radius=6),
+            ft.Text(status.capitalize(), size=15, max_lines=1, overflow=ft.TextOverflow.ELLIPSIS),
+        ], spacing=8, alignment=ft.MainAxisAlignment.CENTER, vertical_alignment=ft.CrossAxisAlignment.CENTER)
+        return ft.Container(
+            content=content,
+            width=width,
+            alignment=ft.Alignment.CENTER,
+            padding=ft.padding.only(left=8, right=8, top=4, bottom=4),
+        )
+
+    # ----- Основное представление -----
     def get_view(self) -> ft.Container:
         header = ft.Row([
             ft.Text("Projects list", size=24, weight=ft.FontWeight.BOLD),
@@ -75,22 +149,134 @@ class ProjectsManager:
             )
         ], alignment=ft.MainAxisAlignment.START)
 
-        projects_table = self._create_projects_table()
+        col_widths = {
+            "id": 50,
+            "name": 150,
+            "description": 350,  
+            "type": 120,
+            "status": 120,
+            "start": 110,
+            "end": 110,
+            "accounts": 110,
+            "expenses": 120,
+            "actions": 100,
+        }
 
-        return ft.Container(
-            content=ft.Column([
-                header,
-                ft.Divider(height=20, color=ft.Colors.GREY_800),
-                stats_row,
-                ft.Container(height=20),
-                projects_table
-            ]),
-            padding=20
+        # Заголовок таблицы
+        header_row = ft.Container(
+            content=ft.Row([
+                self.centered_header("ID", col_widths["id"]),
+                self.centered_header("Name", col_widths["name"]),
+                self.centered_header("Type", col_widths["type"]),
+                self.centered_header("Status", col_widths["status"]),
+                self.centered_header("Start", col_widths["start"]),
+                self.centered_header("End", col_widths["end"]),
+                self.centered_header("Accounts", col_widths["accounts"]),
+                self.centered_header("Expenses", col_widths["expenses"]),
+                self.centered_header("Description", col_widths["description"]),
+                self.centered_header("Actions", col_widths["actions"]),
+            ], spacing=0, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+            border=ft.Border(
+                top=ft.BorderSide(1, ft.Colors.GREY_800),
+                left=ft.BorderSide(1, ft.Colors.GREY_800),
+                right=ft.BorderSide(1, ft.Colors.GREY_800),
+                bottom=ft.BorderSide(1, ft.Colors.GREY_800),
+            ),
+            bgcolor=ft.Colors.GREY_900,
+            padding=5,
         )
 
-    def _create_projects_table(self) -> ft.Container:
-        if not self.projects:
-            return ft.Container(
+        if self.projects:
+            # Строки данных
+            rows_content = []
+            for proj in self.projects:
+                edit_btn = ft.IconButton(
+                    icon=ft.Icons.EDIT_OUTLINED,
+                    icon_color=ft.Colors.BLUE_400,
+                    tooltip="Edit project",
+                    data=proj.get("id"),
+                    on_click=self.open_edit_project_dialog,
+                    width=32,
+                    height=32,
+                    padding=0,
+                    icon_size=20,
+                )
+                delete_btn = ft.IconButton(
+                    icon=ft.Icons.DELETE_OUTLINE,
+                    icon_color=ft.Colors.RED_400,
+                    tooltip="Delete project",
+                    data=proj.get("id"),
+                    on_click=self.delete_project,
+                    width=32,
+                    height=32,
+                    padding=0,
+                    icon_size=20,
+                )
+
+                name = proj.get("name", "")
+                description = proj.get("description", "")  # может быть многострочным
+                project_type = proj.get("type", "other").capitalize()
+                status = proj.get("status", "unknown")
+                start = proj.get("start_date", "")
+                end = proj.get("end_date", "")
+                accounts_count = str(len(proj.get("accounts", [])))
+                expenses = proj.get("expenses", 0)
+                expenses_str = f"${expenses:.2f}" if expenses else "-"
+
+                row = ft.Container(
+                    content=ft.Row([
+                        self.centered_cell(str(proj.get("id", "")), col_widths["id"]),
+                        self.centered_cell(name, col_widths["name"], tooltip=name),
+                        self.centered_cell(project_type, col_widths["type"]),
+                        self.centered_status_cell(status, col_widths["status"]),
+                        self.centered_cell(start, col_widths["start"]),
+                        self.centered_cell(end, col_widths["end"]),
+                        self.centered_cell(accounts_count, col_widths["accounts"]),
+                        self.centered_cell(expenses_str, col_widths["expenses"]),
+                        self.centered_cell(description, col_widths["description"], multiline=True, size=10),
+                        ft.Container(
+                            content=ft.Row([edit_btn, delete_btn], spacing=2, alignment=ft.MainAxisAlignment.CENTER),
+                            width=col_widths["actions"],
+                            alignment=ft.Alignment.CENTER,
+                        ),
+                    ], spacing=0, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                    border=ft.Border(
+                        left=ft.BorderSide(1, ft.Colors.GREY_800),
+                        right=ft.BorderSide(1, ft.Colors.GREY_800),
+                        bottom=ft.BorderSide(1, ft.Colors.GREY_800),
+                    ),
+                    padding=5,
+                )
+                rows_content.append(row)
+
+            body = ft.Container(
+                content=ft.Column(
+                    rows_content,
+                    scroll=ft.ScrollMode.ALWAYS,
+                ),
+                height=500,
+                border=ft.Border(
+                    left=ft.BorderSide(1, ft.Colors.GREY_800),
+                    right=ft.BorderSide(1, ft.Colors.GREY_800),
+                    bottom=ft.BorderSide(1, ft.Colors.GREY_800),
+                ),
+            )
+
+            table_content = ft.Column([
+                header_row,
+                body,
+            ])
+
+            table_container = ft.Container(
+                content=ft.Row(
+                    [table_content],
+                    scroll=ft.ScrollMode.ALWAYS,
+                ),
+                height=550,
+                alignment=ft.Alignment.CENTER,
+            )
+        else:
+            table_container = ft.Container(
                 content=ft.Column([
                     ft.Icon(ft.Icons.FOLDER_OUTLINED, size=64, color=ft.Colors.GREY_600),
                     ft.Text("No projects yet", size=20, color=ft.Colors.GREY_400),
@@ -101,90 +287,15 @@ class ProjectsManager:
                 height=400,
             )
 
-        rows = []
-        for proj in self.projects:
-            edit_btn = ft.IconButton(
-                icon=ft.Icons.EDIT_OUTLINED,
-                icon_color=ft.Colors.BLUE_400,
-                tooltip="Edit project",
-                data=proj.get("id"),
-                on_click=self.open_edit_project_dialog
-            )
-            delete_btn = ft.IconButton(
-                icon=ft.Icons.DELETE_OUTLINE,
-                icon_color=ft.Colors.RED_400,
-                tooltip="Delete project",
-                data=proj.get("id"),
-                on_click=self.delete_project
-            )
-
-            status = proj.get("status", "unknown")
-            status_colors = {
-                "active": ft.Colors.GREEN_400,
-                "waiting": ft.Colors.ORANGE_400,
-                "completed": ft.Colors.BLUE_400,
-                "cancelled": ft.Colors.GREY_400,
-            }
-            status_color = status_colors.get(status, ft.Colors.GREY_400)
-            status_text = ft.Row([
-                ft.Container(width=10, height=10, bgcolor=status_color, border_radius=5),
-                ft.Text(status.capitalize(), size=12),
-            ], spacing=5)
-
-            project_type = proj.get("type", "other").capitalize()
-            accounts_count = len(proj.get("accounts", []))
-
-            expenses = proj.get("expenses", 0)
-            expenses_str = f"${expenses:.2f}" if expenses else "-"
-
-            name = proj.get("name", "")
-            name_text = ft.Text(
-                name,
-                size=12,
-                weight=ft.FontWeight.BOLD,
-                max_lines=1,
-                overflow=ft.TextOverflow.ELLIPSIS,
-                width=150,
-                tooltip=name,
-            )
-
-            row = ft.DataRow(
-                cells=[
-                    ft.DataCell(ft.Text(str(proj.get("id", "")), size=12)),
-                    ft.DataCell(name_text),
-                    ft.DataCell(ft.Text(project_type, size=12)),
-                    ft.DataCell(status_text),
-                    ft.DataCell(ft.Text(proj.get("start_date", ""), size=12)),
-                    ft.DataCell(ft.Text(proj.get("end_date", ""), size=12)),
-                    ft.DataCell(ft.Text(str(accounts_count), size=12)),
-                    ft.DataCell(ft.Text(expenses_str, size=12)),
-                    ft.DataCell(ft.Row([edit_btn, delete_btn], spacing=5)),
-                ]
-            )
-            rows.append(row)
-
-        table = ft.DataTable(
-            columns=[
-                ft.DataColumn(ft.Text("ID", size=12)),
-                ft.DataColumn(ft.Text("Name", size=12)),
-                ft.DataColumn(ft.Text("Type", size=12)),
-                ft.DataColumn(ft.Text("Status", size=12)),
-                ft.DataColumn(ft.Text("Start", size=12)),
-                ft.DataColumn(ft.Text("End", size=12)),
-                ft.DataColumn(ft.Text("Acc", size=12)),
-                ft.DataColumn(ft.Text("Expenses", size=12)),
-                ft.DataColumn(ft.Text("Actions", size=12)),
-            ],
-            rows=rows,
-            border=ft.Border.all(1, ft.Colors.GREY_800),
-            vertical_lines=ft.BorderSide(1, ft.Colors.GREY_800),
-            horizontal_lines=ft.BorderSide(1, ft.Colors.GREY_800),
-            column_spacing=15,
-        )
-
         return ft.Container(
-            content=ft.Row([table], scroll=ft.ScrollMode.ALWAYS),
-            height=400,
+            content=ft.Column([
+                header,
+                ft.Divider(height=20, color=ft.Colors.GREY_800),
+                stats_row,
+                ft.Container(height=20),
+                table_container,
+            ]),
+            padding=20,
         )
 
     def open_add_project_dialog(self, e: ft.ControlEvent = None):
@@ -245,7 +356,6 @@ class ProjectsManager:
             hint_text="2025-12-31",
         )
 
-        # Поле общей суммы расходов (редактируемое)
         self.expenses_field = ft.TextField(
             label="Total expenses (USD)",
             value=str(project.get("expenses", "0.0")) if project else "0.0",
@@ -254,7 +364,6 @@ class ProjectsManager:
             width=200,
         )
 
-        # Поле для добавления расходов и кнопка "+"
         self.add_expense_field = ft.TextField(
             label="Add expense",
             keyboard_type=ft.KeyboardType.NUMBER,
@@ -269,7 +378,6 @@ class ProjectsManager:
         )
         expenses_row = ft.Row([self.expenses_field, self.add_expense_field, add_btn], alignment=ft.MainAxisAlignment.START)
 
-        # Поиск аккаунтов
         self.search_field = ft.TextField(
             label="Search accounts",
             prefix_icon=ft.Icons.SEARCH,
@@ -277,15 +385,12 @@ class ProjectsManager:
             hint_text="Type to filter by private key or email",
         )
 
-        # Кнопки управления выделением
         select_all_btn = ft.TextButton("Select All", on_click=self.select_all_accounts)
         clear_all_btn = ft.TextButton("Clear All", on_click=self.clear_all_accounts)
 
-        # Контейнер для списка аккаунтов
         self.accounts_list = ft.Column(scroll=ft.ScrollMode.AUTO, height=300)
-        self._build_accounts_list()  # заполняем список
+        self._build_accounts_list()
 
-        # Диалог
         self.dialog_modal = ft.AlertDialog(
             modal=True,
             title=ft.Text("Edit Project" if project else "Add New Project"),
@@ -329,20 +434,18 @@ class ProjectsManager:
         checkboxes = []
         filter_text = filter_text.lower()
         for acc in self.accounts_manager.accounts:
-            # Формируем строку для поиска (объединяем все поля, по которым ищем)
             searchable_string = (
                 f"id:{acc['id']} "
                 f"evm:{acc.get('evm_private_key', '')} "
                 f"sol:{acc.get('sol_private_key', '')} "
                 f"email:{acc.get('email', '')}"
             ).lower()
-            
-            # Если фильтр не пустой и не содержится в searchable_string, пропускаем
+
             if filter_text and filter_text not in searchable_string:
                 continue
 
-            # Лейбл остаётся прежним (ID + email)
-            label = f"Mult {acc['id']}"
+            evm_short = acc.get('evm_private_key', '')[:8] + "..." + acc.get("evm_private_key")[-4:] if acc.get('evm_private_key') else "No key"
+            label = f"ID {acc['id']} ({evm_short})"
             cb = ft.Checkbox(
                 label=label,
                 value=acc["id"] in self.current_project_accounts,
@@ -354,7 +457,6 @@ class ProjectsManager:
         self.page.update()
 
     def add_expense_to_total(self, e):
-        """Прибавляет введённую сумму к полю общих расходов."""
         try:
             current = float(self.expenses_field.value or "0")
             add_amount = float(self.add_expense_field.value or "0")
@@ -387,16 +489,13 @@ class ProjectsManager:
     def save_project(self, e: ft.ControlEvent = None):
         name = self.name_field.value.strip()
         if not name:
-            # можно показать предупреждение, но для простоты пропустим
             return
 
-        # Собираем выбранные аккаунты
         selected_accounts = [
             cb.data for cb in self.accounts_list.controls
             if isinstance(cb, ft.Checkbox) and cb.value
         ]
 
-        # Получаем сумму из поля
         try:
             expenses = float(self.expenses_field.value or "0")
         except ValueError:
