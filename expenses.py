@@ -9,9 +9,6 @@ EXPENSES_FILE = DATA_DIR / "expenses.json"
 
 CATEGORIES = ["Proxy", "Captcha", "Gas", "Software", "Other"]
 
-SCOPE_GLOBAL = "global"
-SCOPE_PROJECT = "project"
-
 def ensure_data_dir():
     DATA_DIR.mkdir(exist_ok=True)
 
@@ -42,7 +39,6 @@ class ExpensesManager:
         self.filter_account_dropdown = None
 
         # Поля диалога
-        self.scope_radio = None
         self.date_field = None
         self.project_dropdown = None
         self.account_dropdown = None
@@ -52,10 +48,46 @@ class ExpensesManager:
         self.dialog_modal = None
         self.editing_expense_id = None
 
+    # ----- Вспомогательные методы для кастомной таблицы -----
+    @staticmethod
+    def centered_header(text: str, width: int) -> ft.Container:
+        """Ячейка заголовка с центрированием (шрифт 17)"""
+        return ft.Container(
+            content=ft.Text(
+                text,
+                size=17,                           # увеличено с 16 до 17
+                weight=ft.FontWeight.BOLD,
+                text_align=ft.TextAlign.CENTER,
+                max_lines=1,
+                overflow=ft.TextOverflow.ELLIPSIS,
+            ),
+            width=width,
+            alignment=ft.Alignment.CENTER,
+            padding=5,
+        )
+
+    @staticmethod
+    def centered_cell(text: str, width: int, tooltip: str = "") -> ft.Container:
+        """Ячейка данных с центрированием (шрифт 16)"""
+        return ft.Container(
+            content=ft.Text(
+                text,
+                size=16,                           # увеличено с 15 до 16
+                selectable=True,
+                max_lines=1,
+                overflow=ft.TextOverflow.ELLIPSIS,
+                text_align=ft.TextAlign.CENTER,
+            ),
+            width=width,
+            alignment=ft.Alignment.CENTER,
+            padding=ft.padding.only(left=8, right=8, top=4, bottom=4),
+            tooltip=tooltip,
+        )
+
+    # ----- Основное представление -----
     def get_view(self) -> ft.Container:
-        # Заголовок и кнопка добавления
         header = ft.Row([
-            ft.Text("Expenses management", size=24, weight=ft.FontWeight.BOLD),
+            ft.Text("Expenses list", size=24, weight=ft.FontWeight.BOLD),
             ft.Container(expand=True),
             ft.ElevatedButton(
                 "Add expense",
@@ -87,16 +119,38 @@ class ExpensesManager:
 
         filters_row = ft.Row([self.filter_project_dropdown, self.filter_account_dropdown], spacing=10)
 
+        # Получаем отфильтрованные расходы и вычисляем итог
+        filtered = self._filtered_expenses()
+        total_amount = sum(exp.get("amount", 0) for exp in filtered)
+
+        # Контейнер с итоговой суммой
+        total_container = ft.Container(
+            content=ft.Row([
+                ft.Text("Total:", size=17, weight=ft.FontWeight.W_500),
+                ft.Text(f"${total_amount:.2f}", size=19, weight=ft.FontWeight.W_500, color=ft.Colors.GREEN_400),
+            ], spacing=5, alignment=ft.MainAxisAlignment.CENTER, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+            padding=ft.padding.only(left=20, right=20, top=12, bottom=12),
+            bgcolor=ft.Colors.GREY_900,
+            border_radius=30,
+            margin=ft.margin.only(right=10),
+        )
+
+        # Верхняя строка: фильтры слева, итог справа
+        top_row = ft.Row([
+            filters_row,
+            ft.Container(expand=True),
+            total_container,
+        ], alignment=ft.MainAxisAlignment.START, vertical_alignment=ft.CrossAxisAlignment.CENTER)
+
         # Таблица расходов
-        expenses_table = self._create_expenses_table()
+        expenses_table = self._create_expenses_table(filtered)
 
         return ft.Container(
             content=ft.Column([
                 header,
                 ft.Divider(height=20, color=ft.Colors.GREY_800),
-                filters_row,
+                top_row,
                 ft.Container(height=20),
-                ft.Text("Expenses list", size=18, weight=ft.FontWeight.BOLD),
                 expenses_table
             ]),
             padding=20
@@ -125,9 +179,7 @@ class ExpensesManager:
             ))
         return options
 
-    def _create_expenses_table(self) -> ft.Container:
-        filtered = self._filtered_expenses()
-
+    def _create_expenses_table(self, filtered: List[Dict[str, Any]]) -> ft.Container:
         if not filtered:
             return ft.Container(
                 content=ft.Column([
@@ -140,91 +192,134 @@ class ExpensesManager:
                 height=400,
             )
 
-        rows = []
-        total_amount = 0.0
-        for exp in filtered:
-            total_amount += exp.get("amount", 0)
+        # Ширины колонок (расширена колонка Description)
+        col_widths = {
+            "date": 130,
+            "project": 220,
+            "account": 220,
+            "category": 130,
+            "amount": 110,
+            "description": 300,          # увеличено с 250 до 300
+            "actions": 100,
+        }
 
+        # Заголовок таблицы
+        header_row = ft.Container(
+            content=ft.Row([
+                self.centered_header("Date", col_widths["date"]),
+                self.centered_header("Project", col_widths["project"]),
+                self.centered_header("Account", col_widths["account"]),
+                self.centered_header("Category", col_widths["category"]),
+                self.centered_header("Amount", col_widths["amount"]),
+                self.centered_header("Description", col_widths["description"]),
+                self.centered_header("Actions", col_widths["actions"]),
+            ], spacing=0, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+            border=ft.Border(
+                top=ft.BorderSide(1, ft.Colors.GREY_800),
+                left=ft.BorderSide(1, ft.Colors.GREY_800),
+                right=ft.BorderSide(1, ft.Colors.GREY_800),
+                bottom=ft.BorderSide(1, ft.Colors.GREY_800),
+            ),
+            bgcolor=ft.Colors.GREY_900,
+            padding=5,
+        )
+
+        rows_content = []
+        for exp in filtered:
             edit_btn = ft.IconButton(
                 icon=ft.Icons.EDIT_OUTLINED,
                 icon_color=ft.Colors.BLUE_400,
                 tooltip="Edit expense",
                 data=exp["id"],
-                on_click=self.open_edit_expense_dialog
+                on_click=self.open_edit_expense_dialog,
+                width=32,
+                height=32,
+                padding=0,
+                icon_size=20,
             )
             delete_btn = ft.IconButton(
                 icon=ft.Icons.DELETE_OUTLINE,
                 icon_color=ft.Colors.RED_400,
                 tooltip="Delete expense",
                 data=exp["id"],
-                on_click=self.delete_expense
+                on_click=self.delete_expense,
+                width=32,
+                height=32,
+                padding=0,
+                icon_size=20,
             )
 
-            # Определяем, что отображать в колонках Project и Account
+            # Определяем текст для проекта и аккаунта
             if exp.get("project_id"):
                 project_name = self._get_project_name(exp["project_id"])
                 if exp.get("account_id"):
                     account_text = self._get_account_label(exp["account_id"])
                 else:
-                    account_text = "All accounts"
+                    account_text = "-"
             else:
                 project_name = "Global"
                 account_text = "-"
 
-            date_text = ft.Text(exp.get("date", ""), size=12)
-            project_text_widget = ft.Text(project_name, size=12, max_lines=1, overflow=ft.TextOverflow.ELLIPSIS, width=120)
-            account_text_widget = ft.Text(account_text, size=12, max_lines=1, overflow=ft.TextOverflow.ELLIPSIS, width=120)
-            category_text = ft.Text(exp.get("category", ""), size=12)
-            amount_text = ft.Text(f"${exp.get('amount', 0):.2f}", size=12)
-            desc_text = ft.Text(exp.get("description", ""), size=12, max_lines=1, overflow=ft.TextOverflow.ELLIPSIS, width=150)
+            date_text = exp.get("date", "")
+            category = exp.get("category", "")
+            amount = exp.get("amount", 0)
+            amount_str = f"${amount:.2f}"
+            description = exp.get("description", "")
 
-            row = ft.DataRow(
-                cells=[
-                    ft.DataCell(date_text),
-                    ft.DataCell(project_text_widget),
-                    ft.DataCell(account_text_widget),
-                    ft.DataCell(category_text),
-                    ft.DataCell(amount_text),
-                    ft.DataCell(desc_text),
-                    ft.DataCell(ft.Row([edit_btn, delete_btn], spacing=5)),
-                ]
-            )
-            rows.append(row)
-
-        table = ft.DataTable(
-            columns=[
-                ft.DataColumn(ft.Text("Date", size=12)),
-                ft.DataColumn(ft.Text("Project", size=12)),
-                ft.DataColumn(ft.Text("Account", size=12)),
-                ft.DataColumn(ft.Text("Category", size=12)),
-                ft.DataColumn(ft.Text("Amount", size=12)),
-                ft.DataColumn(ft.Text("Description", size=12)),
-                ft.DataColumn(ft.Text("Actions", size=12)),
-            ],
-            rows=rows,
-            border=ft.Border.all(1, ft.Colors.GREY_800),
-            vertical_lines=ft.BorderSide(1, ft.Colors.GREY_800),
-            horizontal_lines=ft.BorderSide(1, ft.Colors.GREY_800),
-            column_spacing=15,
-        )
-
-        total_row = ft.Container(
-            content=ft.Row([
-                ft.Text("Total: ", size=16, weight=ft.FontWeight.BOLD),
-                ft.Text(f"${total_amount:.2f}", size=16, color=ft.Colors.GREEN_400),
-            ], alignment=ft.MainAxisAlignment.END),
-            padding=10,
-        )
-
-        return ft.Container(
-            content=ft.Column([
-                ft.Container(
-                    content=ft.Row([table], scroll=ft.ScrollMode.ALWAYS),
-                    height=400,
+            row = ft.Container(
+                content=ft.Row([
+                    self.centered_cell(date_text, col_widths["date"]),
+                    self.centered_cell(project_name, col_widths["project"], tooltip=project_name),
+                    self.centered_cell(account_text, col_widths["account"], tooltip=account_text),
+                    self.centered_cell(category, col_widths["category"]),
+                    self.centered_cell(amount_str, col_widths["amount"]),
+                    self.centered_cell(description, col_widths["description"], tooltip=description),
+                    ft.Container(
+                        content=ft.Row([edit_btn, delete_btn], spacing=2, alignment=ft.MainAxisAlignment.CENTER),
+                        width=col_widths["actions"],
+                        alignment=ft.Alignment.CENTER,
+                    ),
+                ], spacing=0, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                border=ft.Border(
+                    left=ft.BorderSide(1, ft.Colors.GREY_800),
+                    right=ft.BorderSide(1, ft.Colors.GREY_800),
+                    bottom=ft.BorderSide(1, ft.Colors.GREY_800),
                 ),
-                total_row,
-            ]),
+                padding=5,
+            )
+            rows_content.append(row)
+
+        # Тело таблицы с вертикальной прокруткой
+        body = ft.Container(
+            content=ft.Column(
+                rows_content,
+                scroll=ft.ScrollMode.ALWAYS,
+            ),
+            height=450,
+            border=ft.Border(
+                left=ft.BorderSide(1, ft.Colors.GREY_800),
+                right=ft.BorderSide(1, ft.Colors.GREY_800),
+                bottom=ft.BorderSide(1, ft.Colors.GREY_800),
+            ),
         )
+
+        # Объединяем заголовок и тело
+        table_content = ft.Column([
+            header_row,
+            body,
+        ])
+
+        # Внешний контейнер с горизонтальной прокруткой
+        table_container = ft.Container(
+            content=ft.Row(
+                [table_content],
+                scroll=ft.ScrollMode.ALWAYS,
+            ),
+            height=500,
+            alignment=ft.Alignment.CENTER,
+        )
+
+        return table_container
 
     def _filtered_expenses(self) -> List[Dict[str, Any]]:
         project_filter = self.filter_project_dropdown.value if self.filter_project_dropdown else "all"
@@ -235,14 +330,13 @@ class ExpensesManager:
             exp_project = str(exp.get("project_id")) if exp.get("project_id") else None
             exp_account = str(exp.get("account_id")) if exp.get("account_id") else None
 
-            # Фильтр по проекту
             if project_filter != "all":
                 if exp_project is None:
+                    # глобальные расходы показываем всегда
                     pass
                 elif exp_project != project_filter:
                     continue
 
-            # Фильтр по аккаунту
             if account_filter != "all":
                 if exp_account is None:
                     continue
@@ -262,7 +356,7 @@ class ExpensesManager:
 
     def _get_account_label(self, account_id: Optional[int]) -> str:
         if account_id is None:
-            return "All accounts"
+            return "-"
         for acc in self.accounts_manager.accounts:
             if acc["id"] == account_id:
                 key = acc.get("evm_private_key", "")
@@ -276,6 +370,7 @@ class ExpensesManager:
     def apply_filters(self, e):
         self.update_content(self.get_view())
 
+    # ----- Диалог добавления/редактирования -----
     def open_add_expense_dialog(self, e: ft.ControlEvent = None):
         self.editing_expense_id = None
         self._show_expense_dialog()
@@ -288,18 +383,6 @@ class ExpensesManager:
             self._show_expense_dialog(expense)
 
     def _show_expense_dialog(self, expense: Optional[Dict] = None):
-        initial_scope = expense.get("scope", SCOPE_PROJECT) if expense else SCOPE_PROJECT
-
-        # Две радиокнопки: Project expense и Global expense
-        self.scope_radio = ft.RadioGroup(
-            content=ft.Row([
-                ft.Radio(value=SCOPE_PROJECT, label="Project expense"),
-                ft.Radio(value=SCOPE_GLOBAL, label="Global expense"),
-            ]),
-            value=initial_scope
-        )
-        self.scope_radio.on_change = self.on_scope_change
-
         self.date_field = ft.TextField(
             label="Date (YYYY-MM-DD)",
             value=expense.get("date") if expense else "",
@@ -327,35 +410,37 @@ class ExpensesManager:
             max_lines=4,
         )
 
-        # Dropdown для проекта и аккаунта
+        # Выпадающий список проектов + пустая опция для глобальных расходов
         self.project_dropdown = ft.Dropdown(
-            label="Project",
-            options=[ft.dropdown.Option("", "Select project")] + self._get_project_options(),
+            label="Project (leave empty for global expense)",
+            options=[ft.dropdown.Option("", "-- Global --")] + self._get_project_options(),
             value=str(expense.get("project_id")) if expense and expense.get("project_id") else "",
         )
+        # on_change назначаем отдельно
+        self.project_dropdown.on_change = self.on_project_change
+
+        # Выпадающий список аккаунтов
         self.account_dropdown = ft.Dropdown(
             label="Account (optional)",
-            options=[ft.dropdown.Option("", "All accounts")] + self._get_account_options(),
+            options=[ft.dropdown.Option("", "-- All accounts --")] + self._get_account_options(),
             value=str(expense.get("account_id")) if expense and expense.get("account_id") else "",
         )
 
-        # Настраиваем enabled/disabled в зависимости от scope
-        self._update_fields_for_scope(initial_scope)
+        # Устанавливаем начальное состояние аккаунта
+        self._update_account_state()
 
         self.dialog_modal = ft.AlertDialog(
             modal=True,
             title=ft.Text("Edit Expense" if expense else "Add New Expense"),
             content=ft.Container(
                 content=ft.Column([
-                    self.scope_radio,
-                    ft.Divider(height=10, color=ft.Colors.GREY_800),
                     self.date_field,
                     self.project_dropdown,
                     self.account_dropdown,
                     self.category_dropdown,
                     self.amount_field,
                     self.desc_field,
-                ], scroll=ft.ScrollMode.AUTO, height=550),
+                ], scroll=ft.ScrollMode.AUTO, height=500),
                 width=500,
             ),
             actions=[
@@ -367,19 +452,17 @@ class ExpensesManager:
 
         self.page.show_dialog(self.dialog_modal)
 
-    def on_scope_change(self, e):
-        self._update_fields_for_scope(self.scope_radio.value)
+    def on_project_change(self, e):
+        """Обработчик изменения выбранного проекта – активирует/деактивирует поле аккаунта"""
+        self._update_account_state()
         self.page.update()
 
-    def _update_fields_for_scope(self, scope: str):
-        if scope == SCOPE_PROJECT:
-            self.project_dropdown.disabled = False
+    def _update_account_state(self):
+        """Включает поле аккаунта, если выбран проект, иначе отключает и сбрасывает"""
+        if self.project_dropdown.value:
             self.account_dropdown.disabled = False
-        else:  # global
-            self.project_dropdown.disabled = True
+        else:
             self.account_dropdown.disabled = True
-            # Сбрасываем значения
-            self.project_dropdown.value = ""
             self.account_dropdown.value = ""
 
     def close_dialog(self, e: ft.ControlEvent = None):
@@ -395,24 +478,21 @@ class ExpensesManager:
         except ValueError:
             amount = 0.0
 
-        scope = self.scope_radio.value
-
         expense_data = {
             "id": self.editing_expense_id if self.editing_expense_id else 0,
             "date": self.date_field.value,
-            "scope": scope,
             "category": self.category_dropdown.value,
             "amount": amount,
             "description": self.desc_field.value,
         }
 
-        if scope == SCOPE_PROJECT:
-            if not self.project_dropdown.value:
-                # Проект обязателен
-                return
+        if self.project_dropdown.value:
             expense_data["project_id"] = int(self.project_dropdown.value)
-            expense_data["account_id"] = int(self.account_dropdown.value) if self.account_dropdown.value else None
-        else:  # global
+            if self.account_dropdown.value:
+                expense_data["account_id"] = int(self.account_dropdown.value)
+            else:
+                expense_data["account_id"] = None
+        else:
             expense_data["project_id"] = None
             expense_data["account_id"] = None
 

@@ -51,7 +51,7 @@ class ProjectsManager:
     # ----- Вспомогательные методы для кастомной таблицы -----
     @staticmethod
     def centered_header(text: str, width: int) -> ft.Container:
-        """Ячейка заголовка с центрированием (без переноса)"""
+        """Ячейка заголовка с центрированием (шрифт 16)"""
         return ft.Container(
             content=ft.Text(
                 text,
@@ -67,42 +67,26 @@ class ProjectsManager:
         )
 
     @staticmethod
-    def centered_cell(text: str, width: int, tooltip: str = "", multiline: bool = False, size = 15) -> ft.Container:
-        """
-        Ячейка данных с центрированием.
-        Если multiline=True, текст может переноситься на несколько строк.
-        """
-        if multiline:
-            # Для многострочного текста не ограничиваем количество строк
-            text_widget = ft.Text(
+    def centered_cell(text: str, width: int, tooltip: str = "") -> ft.Container:
+        """Ячейка данных с центрированием (одна строка + подсказка)"""
+        return ft.Container(
+            content=ft.Text(
                 text,
-                size=size,
-                selectable=True,
-                text_align=ft.TextAlign.CENTER,
-                no_wrap=False,  # разрешаем перенос
-            )
-        else:
-            # Для остальных – одна строка с обрезанием
-            text_widget = ft.Text(
-                text,
-                size=size,
+                size=15,
                 selectable=True,
                 max_lines=1,
                 overflow=ft.TextOverflow.ELLIPSIS,
                 text_align=ft.TextAlign.CENTER,
-            )
-
-        return ft.Container(
-            content=text_widget,
+            ),
             width=width,
             alignment=ft.Alignment.CENTER,
             padding=ft.padding.only(left=8, right=8, top=4, bottom=4),
-            tooltip=tooltip if not multiline else None,  # подсказка не нужна, если текст виден полностью
+            tooltip=tooltip,
         )
 
     @staticmethod
     def centered_status_cell(status: str, width: int) -> ft.Container:
-        """Ячейка статуса с цветным кружком и текстом (центрирована, одна строка)"""
+        """Ячейка статуса с цветным кружком и текстом (центрирована)"""
         status_colors = {
             "active": ft.Colors.GREEN_400,
             "waiting": ft.Colors.ORANGE_400,
@@ -120,6 +104,27 @@ class ProjectsManager:
             alignment=ft.Alignment.CENTER,
             padding=ft.padding.only(left=8, right=8, top=4, bottom=4),
         )
+
+    def _format_tooltip(self, text: str, max_chars: int = 50) -> str:
+        """Разбивает длинный текст на строки по max_chars символов для компактной подсказки"""
+        if not text:
+            return text
+        words = text.split(' ')
+        lines = []
+        current_line = ""
+        for word in words:
+            if len(current_line) + len(word) + 1 <= max_chars:
+                if current_line:
+                    current_line += " " + word
+                else:
+                    current_line = word
+            else:
+                if current_line:
+                    lines.append(current_line)
+                current_line = word
+        if current_line:
+            lines.append(current_line)
+        return '\n'.join(lines)
 
     # ----- Основное представление -----
     def get_view(self) -> ft.Container:
@@ -149,15 +154,15 @@ class ProjectsManager:
             )
         ], alignment=ft.MainAxisAlignment.START)
 
+        # Ширины колонок (без Description)
         col_widths = {
             "id": 50,
-            "name": 150,
-            "description": 350,  
+            "name": 250,
             "type": 120,
             "status": 120,
             "start": 110,
             "end": 110,
-            "accounts": 110,
+            "acc": 70,
             "expenses": 120,
             "actions": 100,
         }
@@ -171,9 +176,8 @@ class ProjectsManager:
                 self.centered_header("Status", col_widths["status"]),
                 self.centered_header("Start", col_widths["start"]),
                 self.centered_header("End", col_widths["end"]),
-                self.centered_header("Accounts", col_widths["accounts"]),
+                self.centered_header("Acc", col_widths["acc"]),
                 self.centered_header("Expenses", col_widths["expenses"]),
-                self.centered_header("Description", col_widths["description"]),
                 self.centered_header("Actions", col_widths["actions"]),
             ], spacing=0, vertical_alignment=ft.CrossAxisAlignment.CENTER),
             border=ft.Border(
@@ -214,7 +218,10 @@ class ProjectsManager:
                 )
 
                 name = proj.get("name", "")
-                description = proj.get("description", "")  # может быть многострочным
+                description = proj.get("description", "")
+                formatted_desc = self._format_tooltip(description, 50)
+                name_cell = self.centered_cell(name, col_widths["name"], tooltip=formatted_desc)
+
                 project_type = proj.get("type", "other").capitalize()
                 status = proj.get("status", "unknown")
                 start = proj.get("start_date", "")
@@ -226,14 +233,13 @@ class ProjectsManager:
                 row = ft.Container(
                     content=ft.Row([
                         self.centered_cell(str(proj.get("id", "")), col_widths["id"]),
-                        self.centered_cell(name, col_widths["name"], tooltip=name),
+                        name_cell,
                         self.centered_cell(project_type, col_widths["type"]),
                         self.centered_status_cell(status, col_widths["status"]),
                         self.centered_cell(start, col_widths["start"]),
                         self.centered_cell(end, col_widths["end"]),
-                        self.centered_cell(accounts_count, col_widths["accounts"]),
+                        self.centered_cell(accounts_count, col_widths["acc"]),
                         self.centered_cell(expenses_str, col_widths["expenses"]),
-                        self.centered_cell(description, col_widths["description"], multiline=True, size=10),
                         ft.Container(
                             content=ft.Row([edit_btn, delete_btn], spacing=2, alignment=ft.MainAxisAlignment.CENTER),
                             width=col_widths["actions"],
@@ -249,6 +255,7 @@ class ProjectsManager:
                 )
                 rows_content.append(row)
 
+            # Тело таблицы с вертикальной прокруткой
             body = ft.Container(
                 content=ft.Column(
                     rows_content,
@@ -262,11 +269,13 @@ class ProjectsManager:
                 ),
             )
 
+            # Объединяем заголовок и тело
             table_content = ft.Column([
                 header_row,
                 body,
             ])
 
+            # Внешний контейнер с горизонтальной прокруткой
             table_container = ft.Container(
                 content=ft.Row(
                     [table_content],
@@ -295,9 +304,10 @@ class ProjectsManager:
                 ft.Container(height=20),
                 table_container,
             ]),
-            padding=20,
+            padding=20
         )
 
+    # ---------- Диалоги и функциональность (без изменений) ----------
     def open_add_project_dialog(self, e: ft.ControlEvent = None):
         self.editing_project_id = None
         self.current_project_accounts = []
@@ -444,7 +454,7 @@ class ProjectsManager:
             if filter_text and filter_text not in searchable_string:
                 continue
 
-            evm_short = acc.get('evm_private_key', '')[:8] + "..." + acc.get("evm_private_key")[-4:] if acc.get('evm_private_key') else "No key"
+            evm_short = acc.get('evm_private_key', '')[:8] + "..." if acc.get('evm_private_key') else "No key"
             label = f"ID {acc['id']} ({evm_short})"
             cb = ft.Checkbox(
                 label=label,
