@@ -51,11 +51,11 @@ class ExpensesManager:
     # ----- Вспомогательные методы для кастомной таблицы -----
     @staticmethod
     def centered_header(text: str, width: int) -> ft.Container:
-        """Ячейка заголовка с центрированием (шрифт 17)"""
+        """Ячейка заголовка с центрированием"""
         return ft.Container(
             content=ft.Text(
                 text,
-                size=17,                           # увеличено с 16 до 17
+                size=17,
                 weight=ft.FontWeight.BOLD,
                 text_align=ft.TextAlign.CENTER,
                 max_lines=1,
@@ -68,11 +68,11 @@ class ExpensesManager:
 
     @staticmethod
     def centered_cell(text: str, width: int, tooltip: str = "") -> ft.Container:
-        """Ячейка данных с центрированием (шрифт 16)"""
+        """Ячейка данных с центрированием (одна строка + подсказка)"""
         return ft.Container(
             content=ft.Text(
                 text,
-                size=16,                           # увеличено с 15 до 16
+                size=16,
                 selectable=True,
                 max_lines=1,
                 overflow=ft.TextOverflow.ELLIPSIS,
@@ -192,14 +192,14 @@ class ExpensesManager:
                 height=400,
             )
 
-        # Ширины колонок (расширена колонка Description)
+        # Ширины колонок
         col_widths = {
             "date": 130,
             "project": 220,
             "account": 220,
             "category": 130,
             "amount": 110,
-            "description": 300,          # увеличено с 250 до 300
+            "description": 300,
             "actions": 100,
         }
 
@@ -332,7 +332,6 @@ class ExpensesManager:
 
             if project_filter != "all":
                 if exp_project is None:
-                    # глобальные расходы показываем всегда
                     pass
                 elif exp_project != project_filter:
                     continue
@@ -370,7 +369,7 @@ class ExpensesManager:
     def apply_filters(self, e):
         self.update_content(self.get_view())
 
-    # ----- Диалог добавления/редактирования -----
+    # ---------- ДИАЛОГ ДОБАВЛЕНИЯ/РЕДАКТИРОВАНИЯ ----------
     def open_add_expense_dialog(self, e: ft.ControlEvent = None):
         self.editing_expense_id = None
         self._show_expense_dialog()
@@ -453,12 +452,10 @@ class ExpensesManager:
         self.page.show_dialog(self.dialog_modal)
 
     def on_project_change(self, e):
-        """Обработчик изменения выбранного проекта – активирует/деактивирует поле аккаунта"""
         self._update_account_state()
         self.page.update()
 
     def _update_account_state(self):
-        """Включает поле аккаунта, если выбран проект, иначе отключает и сбрасывает"""
         if self.project_dropdown.value:
             self.account_dropdown.disabled = False
         else:
@@ -511,8 +508,33 @@ class ExpensesManager:
         self.close_dialog()
         self.update_content(self.get_view())
 
-    def delete_expense(self, e: ft.ControlEvent):
-        expense_id = e.control.data
+    # ---------- ПОДТВЕРЖДЕНИЕ УДАЛЕНИЯ ----------
+    def _confirm_delete(self, expense_id):
+        def close_dialog(e):
+            dlg.open = False
+            self.page.update()
+
+        def confirm(e):
+            self._delete_expense(expense_id)
+            close_dialog(e)
+
+        dlg = ft.AlertDialog(
+            modal=True,
+            title=ft.Text("Confirm deletion"),
+            content=ft.Text("Are you sure you want to delete this expense?"),
+            actions=[
+                ft.TextButton("Cancel", on_click=close_dialog),
+                ft.ElevatedButton("Delete", on_click=confirm, color=ft.Colors.RED_400),
+            ],
+            actions_alignment=ft.MainAxisAlignment.END,
+        )
+        self.page.open(dlg)
+
+    def _delete_expense(self, expense_id):
         self.expenses = [exp for exp in self.expenses if exp["id"] != expense_id]
         save_expenses(self.expenses)
         self.update_content(self.get_view())
+
+    def delete_expense(self, e: ft.ControlEvent):
+        expense_id = e.control.data
+        self._confirm_delete(expense_id)

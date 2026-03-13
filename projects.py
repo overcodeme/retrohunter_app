@@ -4,7 +4,6 @@ from pathlib import Path
 from typing import List, Dict, Any, Optional
 from accounts import AccountsManager
 
-
 DATA_DIR = Path("data")
 PROJECTS_FILE = DATA_DIR / "projects.json"
 
@@ -31,6 +30,7 @@ class ProjectsManager:
         self.page = page
         self.update_content = update_content_callback
         self.accounts_manager = accounts_manager
+        self.expenses_manager = None  # будет установлен позже
         self.projects = load_projects()
 
         # Поля для диалога добавления/редактирования проекта
@@ -38,8 +38,6 @@ class ProjectsManager:
         self.desc_field = None
         self.status_dropdown = None
         self.type_dropdown = None
-        self.expenses_field = None
-        self.add_expense_field = None
         self.start_field = None
         self.end_field = None
         self.search_field = None
@@ -47,6 +45,10 @@ class ProjectsManager:
         self.dialog_modal = None
         self.editing_project_id = None
         self.current_project_accounts = []
+
+    def set_expenses_manager(self, expenses_manager):
+        """Устанавливает ссылку на менеджер расходов для расчёта суммы по проекту"""
+        self.expenses_manager = expenses_manager
 
     # ----- Вспомогательные методы для кастомной таблицы -----
     @staticmethod
@@ -126,6 +128,16 @@ class ProjectsManager:
             lines.append(current_line)
         return '\n'.join(lines)
 
+    def _get_project_expenses(self, project_id: int) -> float:
+        """Возвращает сумму всех расходов, связанных с данным проектом (из expenses_manager)"""
+        if not self.expenses_manager:
+            return 0.0
+        total = 0.0
+        for exp in self.expenses_manager.expenses:
+            if exp.get("project_id") == project_id:
+                total += exp.get("amount", 0)
+        return total
+
     # ----- Основное представление -----
     def get_view(self) -> ft.Container:
         header = ft.Row([
@@ -154,7 +166,7 @@ class ProjectsManager:
             )
         ], alignment=ft.MainAxisAlignment.START)
 
-        # Ширины колонок (без Description)
+        # Ширины колонок
         col_widths = {
             "id": 50,
             "name": 250,
@@ -191,7 +203,6 @@ class ProjectsManager:
         )
 
         if self.projects:
-            # Строки данных
             rows_content = []
             for proj in self.projects:
                 edit_btn = ft.IconButton(
@@ -227,7 +238,7 @@ class ProjectsManager:
                 start = proj.get("start_date", "")
                 end = proj.get("end_date", "")
                 accounts_count = str(len(proj.get("accounts", [])))
-                expenses = proj.get("expenses", 0)
+                expenses = self._get_project_expenses(proj["id"])
                 expenses_str = f"${expenses:.2f}" if expenses else "-"
 
                 row = ft.Container(
@@ -269,13 +280,11 @@ class ProjectsManager:
                 ),
             )
 
-            # Объединяем заголовок и тело
             table_content = ft.Column([
                 header_row,
                 body,
             ])
 
-            # Внешний контейнер с горизонтальной прокруткой
             table_container = ft.Container(
                 content=ft.Row(
                     [table_content],
@@ -307,7 +316,7 @@ class ProjectsManager:
             padding=20
         )
 
-    # ---------- Диалоги и функциональность (без изменений) ----------
+    # ---------- ДИАЛОГИ ----------
     def open_add_project_dialog(self, e: ft.ControlEvent = None):
         self.editing_project_id = None
         self.current_project_accounts = []
@@ -366,28 +375,7 @@ class ProjectsManager:
             hint_text="2025-12-31",
         )
 
-        self.expenses_field = ft.TextField(
-            label="Total expenses (USD)",
-            value=str(project.get("expenses", "0.0")) if project else "0.0",
-            keyboard_type=ft.KeyboardType.NUMBER,
-            hint_text="0.00",
-            width=200,
-        )
-
-        self.add_expense_field = ft.TextField(
-            label="Add expense",
-            keyboard_type=ft.KeyboardType.NUMBER,
-            hint_text="0.00",
-            width=150,
-        )
-        add_btn = ft.IconButton(
-            icon=ft.Icons.ADD_CIRCLE_OUTLINE,
-            icon_color=ft.Colors.GREEN_400,
-            tooltip="Add to total",
-            on_click=self.add_expense_to_total,
-        )
-        expenses_row = ft.Row([self.expenses_field, self.add_expense_field, add_btn], alignment=ft.MainAxisAlignment.START)
-
+        # Поиск аккаунтов
         self.search_field = ft.TextField(
             label="Search accounts",
             prefix_icon=ft.Icons.SEARCH,
@@ -410,7 +398,6 @@ class ProjectsManager:
                     self.desc_field,
                     ft.Row([self.status_dropdown, self.type_dropdown], spacing=10),
                     ft.Row([self.start_field, self.end_field], spacing=10),
-                    expenses_row,
                     ft.Divider(height=10, color=ft.Colors.GREY_800),
                     ft.Text("Select accounts for this project:", size=14, weight=ft.FontWeight.BOLD),
                     ft.Row([select_all_btn, clear_all_btn], alignment=ft.MainAxisAlignment.START),
@@ -422,7 +409,7 @@ class ProjectsManager:
                         padding=10,
                         height=300,
                     ),
-                ], scroll=ft.ScrollMode.AUTO, height=650),
+                ], scroll=ft.ScrollMode.AUTO, height=600),
                 width=750,
             ),
             actions=[
@@ -466,17 +453,6 @@ class ProjectsManager:
         self.accounts_list.controls = checkboxes if checkboxes else [ft.Text("No matching accounts", color=ft.Colors.GREY_400)]
         self.page.update()
 
-    def add_expense_to_total(self, e):
-        try:
-            current = float(self.expenses_field.value or "0")
-            add_amount = float(self.add_expense_field.value or "0")
-            if add_amount > 0:
-                self.expenses_field.value = f"{current + add_amount:.2f}"
-                self.add_expense_field.value = ""
-                self.page.update()
-        except ValueError:
-            pass
-
     def filter_accounts(self, e):
         self._build_accounts_list(self.search_field.value)
 
@@ -506,11 +482,6 @@ class ProjectsManager:
             if isinstance(cb, ft.Checkbox) and cb.value
         ]
 
-        try:
-            expenses = float(self.expenses_field.value or "0")
-        except ValueError:
-            expenses = 0.0
-
         if self.editing_project_id is None:
             new_id = max([p["id"] for p in self.projects], default=0) + 1
             new_project = {
@@ -521,7 +492,6 @@ class ProjectsManager:
                 "type": self.type_dropdown.value,
                 "start_date": self.start_field.value,
                 "end_date": self.end_field.value,
-                "expenses": expenses,
                 "accounts": selected_accounts,
             }
             self.projects.append(new_project)
@@ -535,7 +505,6 @@ class ProjectsManager:
                         "type": self.type_dropdown.value,
                         "start_date": self.start_field.value,
                         "end_date": self.end_field.value,
-                        "expenses": expenses,
                         "accounts": selected_accounts,
                     })
                     break
@@ -544,8 +513,33 @@ class ProjectsManager:
         self.close_dialog()
         self.update_content(self.get_view())
 
-    def delete_project(self, e: ft.ControlEvent):
-        project_id = e.control.data
+    # ---------- ПОДТВЕРЖДЕНИЕ УДАЛЕНИЯ ----------
+    def _confirm_delete(self, project_id):
+        def close_dialog(e):
+            dlg.open = False
+            self.page.update()
+
+        def confirm(e):
+            self._delete_project(project_id)
+            close_dialog(e)
+
+        dlg = ft.AlertDialog(
+            modal=True,
+            title=ft.Text("Confirm deletion"),
+            content=ft.Text("Are you sure you want to delete this project?"),
+            actions=[
+                ft.TextButton("Cancel", on_click=close_dialog),
+                ft.ElevatedButton("Delete", on_click=confirm, color=ft.Colors.RED_400),
+            ],
+            actions_alignment=ft.MainAxisAlignment.END,
+        )
+        self.page.show_dialog(dlg)
+
+    def _delete_project(self, project_id):
         self.projects = [p for p in self.projects if p["id"] != project_id]
         save_projects(self.projects)
         self.update_content(self.get_view())
+
+    def delete_project(self, e: ft.ControlEvent):
+        project_id = e.control.data
+        self._confirm_delete(project_id)

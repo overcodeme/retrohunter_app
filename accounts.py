@@ -30,6 +30,7 @@ class AccountsManager:
         self.update_content = update_content_callback
         self.accounts = load_accounts()
 
+        # Поля для диалога
         self.evm_field = None
         self.sol_field = None
         self.email_field = None
@@ -38,18 +39,21 @@ class AccountsManager:
         self.dialog_modal = None
         self.editing_account_id = None
 
+        # Диалог для импорта
         self.import_dialog = None
         self.import_text_field = None
 
     @staticmethod
     def centered_header(text: str, width: int) -> ft.Container:
-        """Создаёт ячейку заголовка с центрированием"""
+        """Ячейка заголовка с центрированием"""
         return ft.Container(
             content=ft.Text(
                 text,
                 size=16,
                 weight=ft.FontWeight.BOLD,
                 text_align=ft.TextAlign.CENTER,
+                max_lines=1,
+                overflow=ft.TextOverflow.ELLIPSIS,
             ),
             width=width,
             alignment=ft.Alignment.CENTER,
@@ -58,28 +62,29 @@ class AccountsManager:
 
     @staticmethod
     def cell(text: str, width: int, tooltip: str = "") -> ft.Container:
-        """Создаёт ячейку данных с выравниванием по левому краю (по умолчанию)"""
+        """Ячейка данных с выравниванием по левому краю (по умолчанию)"""
         return ft.Container(
             content=ft.Text(
                 text,
-                size=16,
+                size=15,
                 selectable=True,
                 max_lines=1,
                 overflow=ft.TextOverflow.ELLIPSIS,
+                text_align=ft.TextAlign.LEFT,
             ),
             width=width,
             alignment=ft.Alignment.CENTER_LEFT,
-            padding=ft.padding.only(left=8, right=8),
+            padding=ft.padding.only(left=8, right=8, top=4, bottom=4),
             tooltip=tooltip,
         )
 
     @staticmethod
     def centered_cell(text: str, width: int, tooltip: str = "") -> ft.Container:
-        """Создаёт ячейку данных с центрированием"""
+        """Ячейка данных с центрированием"""
         return ft.Container(
             content=ft.Text(
                 text,
-                size=16,
+                size=15,
                 selectable=True,
                 max_lines=1,
                 overflow=ft.TextOverflow.ELLIPSIS,
@@ -87,12 +92,14 @@ class AccountsManager:
             ),
             width=width,
             alignment=ft.Alignment.CENTER,
-            padding=ft.padding.only(left=8, right=8),
+            padding=ft.padding.only(left=8, right=8, top=4, bottom=4),
             tooltip=tooltip,
         )
 
     def get_view(self) -> ft.Container:
         """Возвращает представление раздела аккаунтов с закреплённым заголовком"""
+        table_rows = self._create_table_rows()
+
         header = ft.Row([
             ft.Text("Wallets list", size=24, weight=ft.FontWeight.BOLD),
             ft.Container(expand=True),
@@ -129,7 +136,7 @@ class AccountsManager:
         ], alignment=ft.MainAxisAlignment.START)
 
         col_widths = {
-            "id": 60,
+            "id": 50,
             "evm": 220,
             "sol": 220,
             "email": 250,
@@ -140,14 +147,14 @@ class AccountsManager:
 
         header_row = ft.Container(
             content=ft.Row([
-                self.centered_header("№", col_widths["id"]),
+                self.centered_header("ID", col_widths["id"]),
                 self.centered_header("EVM Key", col_widths["evm"]),
                 self.centered_header("Solana Key", col_widths["sol"]),
                 self.centered_header("Email", col_widths["email"]),
                 self.centered_header("Twitter", col_widths["twitter"]),
                 self.centered_header("Discord", col_widths["discord"]),
                 self.centered_header("Actions", col_widths["actions"]),
-            ], spacing=0),
+            ], spacing=0, vertical_alignment=ft.CrossAxisAlignment.CENTER),
             border=ft.Border(
                 top=ft.BorderSide(1, ft.Colors.GREY_800),
                 left=ft.BorderSide(1, ft.Colors.GREY_800),
@@ -186,18 +193,18 @@ class AccountsManager:
 
                 row = ft.Container(
                     content=ft.Row([
-                        self.centered_cell(str(acc.get("id", "")), col_widths["id"]), 
-                        self.cell(acc.get("evm_private_key", ""), col_widths["evm"], acc.get("evm_private_key", "")),
-                        self.cell(acc.get("sol_private_key", ""), col_widths["sol"], acc.get("sol_private_key", "")),
-                        self.cell(acc.get("email", ""), col_widths["email"], acc.get("email", "")),
-                        self.cell(acc.get("twitter_token", ""), col_widths["twitter"], acc.get("twitter_token", "")),
-                        self.cell(acc.get("discord_token", ""), col_widths["discord"], acc.get("discord_token", "")),
+                        self.centered_cell(str(acc.get("id", "")), col_widths["id"]),
+                        self.cell(acc.get("evm_private_key", ""), col_widths["evm"], tooltip=acc.get("evm_private_key", "")),
+                        self.cell(acc.get("sol_private_key", ""), col_widths["sol"], tooltip=acc.get("sol_private_key", "")),
+                        self.cell(acc.get("email", ""), col_widths["email"], tooltip=acc.get("email", "")),
+                        self.cell(acc.get("twitter_token", ""), col_widths["twitter"], tooltip=acc.get("twitter_token", "")),
+                        self.cell(acc.get("discord_token", ""), col_widths["discord"], tooltip=acc.get("discord_token", "")),
                         ft.Container(
                             content=ft.Row([edit_btn, delete_btn], spacing=2, alignment=ft.MainAxisAlignment.CENTER),
                             width=col_widths["actions"],
                             alignment=ft.Alignment.CENTER,
                         ),
-                    ], spacing=0),
+                    ], spacing=0, vertical_alignment=ft.CrossAxisAlignment.CENTER),
                     border=ft.Border(
                         left=ft.BorderSide(1, ft.Colors.GREY_800),
                         right=ft.BorderSide(1, ft.Colors.GREY_800),
@@ -231,7 +238,6 @@ class AccountsManager:
                     scroll=ft.ScrollMode.ALWAYS,
                 ),
                 height=550,
-                padding=50,
                 alignment=ft.Alignment.CENTER,
             )
         else:
@@ -257,6 +263,11 @@ class AccountsManager:
             padding=20,
         )
 
+    def _create_table_rows(self) -> List[ft.DataRow]:
+        # Этот метод больше не используется (мы строим кастомную таблицу), но оставим для совместимости.
+        return []
+
+    # ---------- ИМПОРТ ЧЕРЕЗ ТЕКСТОВОЕ ПОЛЕ ----------
     def open_import_dialog(self, e: ft.ControlEvent = None):
         self.import_text_field = ft.TextField(
             label="Paste accounts data (one per line)",
@@ -335,6 +346,7 @@ class AccountsManager:
         else:
             print("Нет корректных аккаунтов для импорта.")
 
+    # ---------- ДИАЛОГ ДОБАВЛЕНИЯ/РЕДАКТИРОВАНИЯ ----------
     def open_add_account_dialog(self, e: ft.ControlEvent = None):
         self.editing_account_id = None
         self._show_account_dialog()
@@ -437,8 +449,33 @@ class AccountsManager:
             self.dialog_modal.open = False
             self.page.update()
 
-    def delete_account(self, e: ft.ControlEvent):
-        account_id = e.control.data
+    # ---------- ПОДТВЕРЖДЕНИЕ УДАЛЕНИЯ ----------
+    def _confirm_delete(self, account_id):
+        def close_dialog(e):
+            dlg.open = False
+            self.page.update()
+
+        def confirm(e):
+            self._delete_account(account_id)
+            close_dialog(e)
+
+        dlg = ft.AlertDialog(
+            modal=True,
+            title=ft.Text("Confirm deletion"),
+            content=ft.Text("Are you sure you want to delete this account?"),
+            actions=[
+                ft.TextButton("Cancel", on_click=close_dialog),
+                ft.ElevatedButton("Delete", on_click=confirm, color=ft.Colors.RED_400),
+            ],
+            actions_alignment=ft.MainAxisAlignment.END,
+        )
+        self.page.show_dialog(dlg) 
+
+    def _delete_account(self, account_id):
         self.accounts = [acc for acc in self.accounts if acc.get("id") != account_id]
         save_accounts(self.accounts)
         self.update_content(self.get_view())
+
+    def delete_account(self, e: ft.ControlEvent):
+        account_id = e.control.data
+        self._confirm_delete(account_id)

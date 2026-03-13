@@ -19,15 +19,14 @@ def main(page: ft.Page):
     projects_manager = ProjectsManager(page, update_content_area, accounts_manager)
     expenses_manager = ExpensesManager(page, update_content_area, accounts_manager, projects_manager)
 
+    # Устанавливаем связь между проектами и расходами
+    projects_manager.set_expenses_manager(expenses_manager)
+
     def on_menu_click(e: ft.ControlEvent):
         for item in menu_items:
             item.bgcolor = None
-            if isinstance(item.content, ft.Text):
-                item.content.color = None
 
         e.control.bgcolor = ft.Colors.BLUE_700
-        if isinstance(e.control.content, ft.Text):
-            e.control.content.color = ft.Colors.WHITE
 
         if e.control.data == "wallets":
             content_area.content = accounts_manager.get_view()
@@ -51,37 +50,49 @@ def main(page: ft.Page):
 
     menu_items = [
         ft.Container(
-            content=ft.Text("Wallets", size=16),
+            content=ft.Row([
+                ft.Icon(ft.Icons.ACCOUNT_BALANCE_WALLET_OUTLINED, size=20, color=ft.Colors.BLUE_400),
+                ft.Text("Wallets", size=16),
+            ], spacing=10),
             data="wallets",
             padding=15,
             border_radius=10,
             on_click=on_menu_click,
-            alignment=ft.Alignment.CENTER
+            alignment=ft.Alignment.CENTER_LEFT,
         ),
         ft.Container(
-            content=ft.Text("Projects", size=16),
+            content=ft.Row([
+                ft.Icon(ft.Icons.FOLDER_OUTLINED, size=20, color=ft.Colors.GREEN_400),
+                ft.Text("Projects", size=16),
+            ], spacing=10),
             data="projects",
             padding=15,
             border_radius=10,
             on_click=on_menu_click,
-            alignment=ft.Alignment.CENTER
+            alignment=ft.Alignment.CENTER_LEFT,
         ),
         ft.Container(
-            content=ft.Text("Expenses", size=16),
+            content=ft.Row([
+                ft.Icon(ft.Icons.ATTACH_MONEY, size=20, color=ft.Colors.ORANGE_400),
+                ft.Text("Expenses", size=16),
+            ], spacing=10),
             data="expenses",
             padding=15,
             border_radius=10,
             on_click=on_menu_click,
-            alignment=ft.Alignment.CENTER
+            alignment=ft.Alignment.CENTER_LEFT,
         ),
         ft.Container(
-            content=ft.Text("Statistics", size=16),
+            content=ft.Row([
+                ft.Icon(ft.Icons.BAR_CHART, size=20, color=ft.Colors.PURPLE_400),
+                ft.Text("Statistics", size=16),
+            ], spacing=10),
             data="stats",
             padding=15,
             border_radius=10,
             on_click=on_menu_click,
-            alignment=ft.Alignment.CENTER
-        )
+            alignment=ft.Alignment.CENTER_LEFT,
+        ),
     ]
 
     content_area = ft.Container(
@@ -90,8 +101,6 @@ def main(page: ft.Page):
     )
 
     menu_items[0].bgcolor = ft.Colors.BLUE_700
-    if isinstance(menu_items[0].content, ft.Text):
-        menu_items[0].content.color = ft.Colors.WHITE
 
     page.add(
         ft.Row([
