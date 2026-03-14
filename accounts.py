@@ -2,6 +2,9 @@ import flet as ft
 import json
 from typing import List, Dict, Any, Optional
 from pathlib import Path
+from web3 import Web3
+from solders.keypair import Keypair
+import base58
 
 DATA_DIR = Path("data")
 JSON_FILE = DATA_DIR / "accounts.json"
@@ -16,12 +19,49 @@ def load_accounts() -> List[Dict[str, Any]]:
             json.dump([], f, indent=4, ensure_ascii=False)
         return []
     with open(JSON_FILE, 'r', encoding='utf-8') as f:
-        return json.load(f)
+        data = json.load(f)
+        for acc in data:
+            if "evm_address" not in acc and acc.get("evm_private_key"):
+                addr = derive_evm_address(acc["evm_private_key"])
+                if addr:
+                    acc["evm_address"] = addr
+            if "solana_address" not in acc and acc.get("sol_private_key"):
+                addr = derive_solana_address(acc["sol_private_key"])
+                if addr:
+                    acc["solana_address"] = addr
+        return data
 
 def save_accounts(accounts: List[Dict[str, Any]]):
     ensure_data_dir()
     with open(JSON_FILE, 'w', encoding='utf-8') as f:
         json.dump(accounts, f, indent=4, ensure_ascii=False)
+
+def derive_evm_address(private_key: str) -> Optional[str]:
+    """Получает адрес EVM из приватного ключа (с префиксом 0x или без)"""
+    try:
+        if private_key.startswith('0x'):
+            private_key = private_key[2:]
+        account = Web3().eth.account.from_key(private_key)
+        return account.address
+    except Exception:
+        return None
+
+def derive_solana_address(private_key: str) -> Optional[str]:
+    """Получает адрес Solana из приватного ключа (base58 или байты)"""
+    try:
+        # Пытаемся интерпретировать как base58 строку (стандартный формат)
+        keypair = Keypair.from_base58_string(private_key)
+        return str(keypair.pubkey())
+    except:
+        try:
+            # Альтернативно, возможно это байты в base58
+            decoded = base58.b58decode(private_key)
+            if len(decoded) == 64:
+                keypair = Keypair.from_bytes(decoded)
+                return str(keypair.pubkey())
+        except:
+            pass
+    return None
 
 
 class AccountsManager:
@@ -42,6 +82,14 @@ class AccountsManager:
         # Диалог для импорта
         self.import_dialog = None
         self.import_text_field = None
+
+        # Кэширование представления
+        self._cached_view = None
+        self._revision = 0
+        self._last_revision = -1
+
+    def _increment_revision(self):
+        self._revision += 1
 
     @staticmethod
     def centered_header(text: str, width: int) -> ft.Container:
@@ -96,10 +144,27 @@ class AccountsManager:
             tooltip=tooltip,
         )
 
-    def get_view(self) -> ft.Container:
-        """Возвращает представление раздела аккаунтов с закреплённым заголовком"""
-        table_rows = self._create_table_rows()
+    def _get_account_display(self, acc: Dict, network: str) -> str:
+        """Возвращает строку для отображения аккаунта (адрес или ключ)"""
+        if network == "evm":
+            address = acc.get("evm_address")
+            if address:
+                return address[:4] + "..." + address[-4:]
+            key = acc.get("evm_private_key", "")
+            if key:
+                return key[:4] + "..." + key[-4:]
+            return "No EVM"
+        else:  # solana
+            address = acc.get("solana_address")
+            if address:
+                return address[:4] + "..." + address[-4:]
+            key = acc.get("sol_private_key", "")
+            if key:
+                return key[:4] + "..." + key[-4:]
+            return "No Solana"
 
+    def _build_view(self) -> ft.Container:
+        """Строит представление раздела аккаунтов"""
         header = ft.Row([
             ft.Text("Wallets list", size=24, weight=ft.FontWeight.BOLD),
             ft.Container(expand=True),
@@ -148,8 +213,8 @@ class AccountsManager:
         header_row = ft.Container(
             content=ft.Row([
                 self.centered_header("ID", col_widths["id"]),
-                self.centered_header("EVM Key", col_widths["evm"]),
-                self.centered_header("Solana Key", col_widths["sol"]),
+                self.centered_header("EVM Address", col_widths["evm"]),
+                self.centered_header("Solana Address", col_widths["sol"]),
                 self.centered_header("Email", col_widths["email"]),
                 self.centered_header("Twitter", col_widths["twitter"]),
                 self.centered_header("Discord", col_widths["discord"]),
@@ -191,11 +256,14 @@ class AccountsManager:
                     icon_size=20,
                 )
 
+                evm_display = self._get_account_display(acc, "evm")
+                sol_display = self._get_account_display(acc, "solana")
+
                 row = ft.Container(
                     content=ft.Row([
                         self.centered_cell(str(acc.get("id", "")), col_widths["id"]),
-                        self.cell(acc.get("evm_private_key", ""), col_widths["evm"], tooltip=acc.get("evm_private_key", "")),
-                        self.cell(acc.get("sol_private_key", ""), col_widths["sol"], tooltip=acc.get("sol_private_key", "")),
+                        self.cell(evm_display, col_widths["evm"], tooltip=acc.get("evm_private_key", "")),
+                        self.cell(sol_display, col_widths["sol"], tooltip=acc.get("sol_private_key", "")),
                         self.cell(acc.get("email", ""), col_widths["email"], tooltip=acc.get("email", "")),
                         self.cell(acc.get("twitter_token", ""), col_widths["twitter"], tooltip=acc.get("twitter_token", "")),
                         self.cell(acc.get("discord_token", ""), col_widths["discord"], tooltip=acc.get("discord_token", "")),
@@ -263,8 +331,15 @@ class AccountsManager:
             padding=20,
         )
 
+    def get_view(self) -> ft.Container:
+        """Возвращает представление раздела аккаунтов с кэшированием"""
+        if self._cached_view is None or self._revision != self._last_revision:
+            self._cached_view = self._build_view()
+            self._last_revision = self._revision
+        return self._cached_view
+
     def _create_table_rows(self) -> List[ft.DataRow]:
-        # Этот метод больше не используется (мы строим кастомную таблицу), но оставим для совместимости.
+        # Не используется
         return []
 
     # ---------- ИМПОРТ ЧЕРЕЗ ТЕКСТОВОЕ ПОЛЕ ----------
@@ -303,6 +378,19 @@ class AccountsManager:
             self.import_dialog.open = False
             self.page.update()
 
+    def _derive_addresses(self, account: Dict):
+        """Вычисляет адреса из приватных ключей и добавляет их в словарь"""
+        evm_key = account.get("evm_private_key")
+        sol_key = account.get("sol_private_key")
+        if evm_key:
+            addr = derive_evm_address(evm_key)
+            if addr:
+                account["evm_address"] = addr
+        if sol_key:
+            addr = derive_solana_address(sol_key)
+            if addr:
+                account["solana_address"] = addr
+
     def import_from_text(self, e: ft.ControlEvent = None):
         text = self.import_text_field.value
         if not text:
@@ -329,18 +417,21 @@ class AccountsManager:
             discord = parts[4]
 
             max_id += 1
-            new_accounts.append({
+            new_acc = {
                 "id": max_id,
                 "evm_private_key": evm,
                 "sol_private_key": sol,
                 "email": email,
                 "twitter_token": twitter,
                 "discord_token": discord,
-            })
+            }
+            self._derive_addresses(new_acc)
+            new_accounts.append(new_acc)
 
         if new_accounts:
             self.accounts.extend(new_accounts)
             save_accounts(self.accounts)
+            self._increment_revision()
             self.close_import_dialog()
             self.update_content(self.get_view())
         else:
@@ -428,6 +519,7 @@ class AccountsManager:
                 "twitter_token": self.twitter_field.value or "",
                 "discord_token": self.discord_field.value or "",
             }
+            self._derive_addresses(new_account)
             self.accounts.append(new_account)
         else:
             for acc in self.accounts:
@@ -439,8 +531,10 @@ class AccountsManager:
                         "twitter_token": self.twitter_field.value or "",
                         "discord_token": self.discord_field.value or "",
                     })
+                    self._derive_addresses(acc)
                     break
         save_accounts(self.accounts)
+        self._increment_revision()
         self.close_dialog()
         self.update_content(self.get_view())
 
@@ -469,11 +563,12 @@ class AccountsManager:
             ],
             actions_alignment=ft.MainAxisAlignment.END,
         )
-        self.page.show_dialog(dlg) 
+        self.page.show_dialog(dlg)
 
     def _delete_account(self, account_id):
         self.accounts = [acc for acc in self.accounts if acc.get("id") != account_id]
         save_accounts(self.accounts)
+        self._increment_revision()
         self.update_content(self.get_view())
 
     def delete_account(self, e: ft.ControlEvent):
