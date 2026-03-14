@@ -528,7 +528,7 @@ class ExpensesManager:
             ],
             actions_alignment=ft.MainAxisAlignment.END,
         )
-        self.page.open(dlg)
+        self.page.show_dialog(dlg)
 
     def _delete_expense(self, expense_id):
         self.expenses = [exp for exp in self.expenses if exp["id"] != expense_id]

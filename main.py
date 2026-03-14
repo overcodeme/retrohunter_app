@@ -18,8 +18,6 @@ def main(page: ft.Page):
     accounts_manager = AccountsManager(page, update_content_area)
     projects_manager = ProjectsManager(page, update_content_area, accounts_manager)
     expenses_manager = ExpensesManager(page, update_content_area, accounts_manager, projects_manager)
-
-    # Устанавливаем связь между проектами и расходами
     projects_manager.set_expenses_manager(expenses_manager)
 
     def on_menu_click(e: ft.ControlEvent):
