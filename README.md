@@ -1,2 +1,2 @@
 # retrohunter_app
-Retrodrop acftivity tracker
+Retrodrop acftivity tracker app
