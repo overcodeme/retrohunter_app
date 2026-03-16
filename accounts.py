@@ -1,5 +1,6 @@
 import flet as ft
 import json
+import pyperclip
 from typing import List, Dict, Any, Optional
 from pathlib import Path
 from web3 import Web3
@@ -37,7 +38,6 @@ def save_accounts(accounts: List[Dict[str, Any]]):
         json.dump(accounts, f, indent=4, ensure_ascii=False)
 
 def derive_evm_address(private_key: str) -> Optional[str]:
-    """Получает адрес EVM из приватного ключа (с префиксом 0x или без)"""
     try:
         if private_key.startswith('0x'):
             private_key = private_key[2:]
@@ -47,14 +47,11 @@ def derive_evm_address(private_key: str) -> Optional[str]:
         return None
 
 def derive_solana_address(private_key: str) -> Optional[str]:
-    """Получает адрес Solana из приватного ключа (base58 или байты)"""
     try:
-        # Пытаемся интерпретировать как base58 строку (стандартный формат)
         keypair = Keypair.from_base58_string(private_key)
         return str(keypair.pubkey())
     except:
         try:
-            # Альтернативно, возможно это байты в base58
             decoded = base58.b58decode(private_key)
             if len(decoded) == 64:
                 keypair = Keypair.from_bytes(decoded)
@@ -70,7 +67,6 @@ class AccountsManager:
         self.update_content = update_content_callback
         self.accounts = load_accounts()
 
-        # Поля для диалога
         self.evm_field = None
         self.sol_field = None
         self.email_field = None
@@ -79,11 +75,9 @@ class AccountsManager:
         self.dialog_modal = None
         self.editing_account_id = None
 
-        # Диалог для импорта
         self.import_dialog = None
         self.import_text_field = None
 
-        # Кэширование представления
         self._cached_view = None
         self._revision = 0
         self._last_revision = -1
@@ -91,9 +85,16 @@ class AccountsManager:
     def _increment_revision(self):
         self._revision += 1
 
+    def _copy_to_clipboard(self, e: ft.ControlEvent):
+        text = e.control.data
+        if text:
+            try:
+                pyperclip.copy(text)
+            except Exception as ex:
+                print(f"Copy failed: {ex}")
+
     @staticmethod
     def centered_header(text: str, width: int) -> ft.Container:
-        """Ячейка заголовка с центрированием"""
         return ft.Container(
             content=ft.Text(
                 text,
@@ -105,30 +106,11 @@ class AccountsManager:
             ),
             width=width,
             alignment=ft.Alignment.CENTER,
-            padding=5,
-        )
-
-    @staticmethod
-    def cell(text: str, width: int, tooltip: str = "") -> ft.Container:
-        """Ячейка данных с выравниванием по левому краю (по умолчанию)"""
-        return ft.Container(
-            content=ft.Text(
-                text,
-                size=15,
-                selectable=True,
-                max_lines=1,
-                overflow=ft.TextOverflow.ELLIPSIS,
-                text_align=ft.TextAlign.LEFT,
-            ),
-            width=width,
-            alignment=ft.Alignment.CENTER_LEFT,
             padding=ft.padding.only(left=8, right=8, top=4, bottom=4),
-            tooltip=tooltip,
         )
 
     @staticmethod
     def centered_cell(text: str, width: int, tooltip: str = "") -> ft.Container:
-        """Ячейка данных с центрированием"""
         return ft.Container(
             content=ft.Text(
                 text,
@@ -144,27 +126,7 @@ class AccountsManager:
             tooltip=tooltip,
         )
 
-    def _get_account_display(self, acc: Dict, network: str) -> str:
-        """Возвращает строку для отображения аккаунта (адрес или ключ)"""
-        if network == "evm":
-            address = acc.get("evm_address")
-            if address:
-                return address[:4] + "..." + address[-4:]
-            key = acc.get("evm_private_key", "")
-            if key:
-                return key[:4] + "..." + key[-4:]
-            return "No EVM"
-        else:  # solana
-            address = acc.get("solana_address")
-            if address:
-                return address[:4] + "..." + address[-4:]
-            key = acc.get("sol_private_key", "")
-            if key:
-                return key[:4] + "..." + key[-4:]
-            return "No Solana"
-
     def _build_view(self) -> ft.Container:
-        """Строит представление раздела аккаунтов"""
         header = ft.Row([
             ft.Text("Wallets list", size=24, weight=ft.FontWeight.BOLD),
             ft.Container(expand=True),
@@ -200,26 +162,31 @@ class AccountsManager:
             )
         ], alignment=ft.MainAxisAlignment.START)
 
+        col_spacing = 8
         col_widths = {
-            "id": 50,
-            "evm": 220,
-            "sol": 220,
-            "email": 250,
-            "twitter": 220,
-            "discord": 220,
-            "actions": 120,
+            "id": 70,
+            "evm": 250,
+            "sol": 250,
+            "email": 280,
+            "twitter": 250,
+            "discord": 250,
+            "actions": 160,
         }
+        key_text_width = 210
+
+        total_width = sum(col_widths.values()) + col_spacing * (len(col_widths) - 1)
 
         header_row = ft.Container(
             content=ft.Row([
                 self.centered_header("ID", col_widths["id"]),
-                self.centered_header("EVM Address", col_widths["evm"]),
-                self.centered_header("Solana Address", col_widths["sol"]),
+                self.centered_header("EVM Key", col_widths["evm"]),
+                self.centered_header("Solana Key", col_widths["sol"]),
                 self.centered_header("Email", col_widths["email"]),
                 self.centered_header("Twitter", col_widths["twitter"]),
                 self.centered_header("Discord", col_widths["discord"]),
                 self.centered_header("Actions", col_widths["actions"]),
-            ], spacing=0, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+            ], spacing=col_spacing, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+            width=total_width,
             border=ft.Border(
                 top=ft.BorderSide(1, ft.Colors.GREY_800),
                 left=ft.BorderSide(1, ft.Colors.GREY_800),
@@ -227,7 +194,6 @@ class AccountsManager:
                 bottom=ft.BorderSide(1, ft.Colors.GREY_800),
             ),
             bgcolor=ft.Colors.GREY_900,
-            padding=5,
         )
 
         if self.accounts:
@@ -256,29 +222,75 @@ class AccountsManager:
                     icon_size=20,
                 )
 
-                evm_display = self._get_account_display(acc, "evm")
-                sol_display = self._get_account_display(acc, "solana")
+                # EVM ключ
+                evm_key = acc.get("evm_private_key", "")
+                evm_display = evm_key[:8] + "..." + evm_key[-4:] if len(evm_key) > 12 else evm_key
+                evm_copy_btn = ft.IconButton(
+                    icon=ft.Icons.CONTENT_COPY,
+                    icon_size=16,
+                    tooltip="Copy EVM key",
+                    data=evm_key,
+                    on_click=self._copy_to_clipboard,
+                    width=24,
+                    height=24,
+                    padding=0,
+                )
+                evm_cell_content = ft.Row([
+                    self.centered_cell(evm_display, key_text_width, tooltip=evm_key),
+                    evm_copy_btn,
+                ], spacing=0, alignment=ft.MainAxisAlignment.CENTER, vertical_alignment=ft.CrossAxisAlignment.CENTER)
+                evm_cell = ft.Container(
+                    content=evm_cell_content,
+                    width=col_widths["evm"],
+                    alignment=ft.Alignment.CENTER,
+                )
+
+                # Solana ключ
+                sol_key = acc.get("sol_private_key", "")
+                sol_display = sol_key[:8] + "..." + sol_key[-4:] if len(sol_key) > 12 else sol_key
+                sol_copy_btn = ft.IconButton(
+                    icon=ft.Icons.CONTENT_COPY,
+                    icon_size=16,
+                    tooltip="Copy Solana key",
+                    data=sol_key,
+                    on_click=self._copy_to_clipboard,
+                    width=24,
+                    height=24,
+                    padding=0,
+                )
+                sol_cell_content = ft.Row([
+                    self.centered_cell(sol_display, key_text_width, tooltip=sol_key),
+                    sol_copy_btn,
+                ], spacing=0, alignment=ft.MainAxisAlignment.CENTER, vertical_alignment=ft.CrossAxisAlignment.CENTER)
+                sol_cell = ft.Container(
+                    content=sol_cell_content,
+                    width=col_widths["sol"],
+                    alignment=ft.Alignment.CENTER,
+                )
+
+                # Actions
+                actions_cell = ft.Container(
+                    content=ft.Row([edit_btn, delete_btn], spacing=2, alignment=ft.MainAxisAlignment.CENTER),
+                    width=col_widths["actions"],
+                    alignment=ft.Alignment.CENTER,
+                )
 
                 row = ft.Container(
                     content=ft.Row([
                         self.centered_cell(str(acc.get("id", "")), col_widths["id"]),
-                        self.cell(evm_display, col_widths["evm"], tooltip=acc.get("evm_private_key", "")),
-                        self.cell(sol_display, col_widths["sol"], tooltip=acc.get("sol_private_key", "")),
-                        self.cell(acc.get("email", ""), col_widths["email"], tooltip=acc.get("email", "")),
-                        self.cell(acc.get("twitter_token", ""), col_widths["twitter"], tooltip=acc.get("twitter_token", "")),
-                        self.cell(acc.get("discord_token", ""), col_widths["discord"], tooltip=acc.get("discord_token", "")),
-                        ft.Container(
-                            content=ft.Row([edit_btn, delete_btn], spacing=2, alignment=ft.MainAxisAlignment.CENTER),
-                            width=col_widths["actions"],
-                            alignment=ft.Alignment.CENTER,
-                        ),
-                    ], spacing=0, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                        evm_cell,
+                        sol_cell,
+                        self.centered_cell(acc.get("email", ""), col_widths["email"], tooltip=acc.get("email", "")),
+                        self.centered_cell(acc.get("twitter_token", ""), col_widths["twitter"], tooltip=acc.get("twitter_token", "")),
+                        self.centered_cell(acc.get("discord_token", ""), col_widths["discord"], tooltip=acc.get("discord_token", "")),
+                        actions_cell,
+                    ], spacing=col_spacing, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                    width=total_width,
                     border=ft.Border(
                         left=ft.BorderSide(1, ft.Colors.GREY_800),
                         right=ft.BorderSide(1, ft.Colors.GREY_800),
                         bottom=ft.BorderSide(1, ft.Colors.GREY_800),
                     ),
-                    padding=5,
                 )
                 rows_content.append(row)
 
@@ -287,7 +299,8 @@ class AccountsManager:
                     rows_content,
                     scroll=ft.ScrollMode.ALWAYS,
                 ),
-                height=500,
+                height=700,
+                width=total_width,
                 border=ft.Border(
                     left=ft.BorderSide(1, ft.Colors.GREY_800),
                     right=ft.BorderSide(1, ft.Colors.GREY_800),
@@ -305,7 +318,7 @@ class AccountsManager:
                     [table_content],
                     scroll=ft.ScrollMode.ALWAYS,
                 ),
-                height=550,
+                height=700,
                 alignment=ft.Alignment.CENTER,
             )
         else:
@@ -317,7 +330,7 @@ class AccountsManager:
                 ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
                 padding=50,
                 alignment=ft.Alignment.CENTER,
-                height=400,
+                height=700,
             )
 
         return ft.Container(
@@ -332,17 +345,15 @@ class AccountsManager:
         )
 
     def get_view(self) -> ft.Container:
-        """Возвращает представление раздела аккаунтов с кэшированием"""
         if self._cached_view is None or self._revision != self._last_revision:
             self._cached_view = self._build_view()
             self._last_revision = self._revision
         return self._cached_view
 
     def _create_table_rows(self) -> List[ft.DataRow]:
-        # Не используется
         return []
 
-    # ---------- ИМПОРТ ЧЕРЕЗ ТЕКСТОВОЕ ПОЛЕ ----------
+    # ---------- ИМПОРТ ----------
     def open_import_dialog(self, e: ft.ControlEvent = None):
         self.import_text_field = ft.TextField(
             label="Paste accounts data (one per line)",
@@ -369,7 +380,6 @@ class AccountsManager:
             ],
             actions_alignment=ft.MainAxisAlignment.END,
         )
-
         self.page.show_dialog(self.import_dialog)
         self.page.update()
 
@@ -379,7 +389,6 @@ class AccountsManager:
             self.page.update()
 
     def _derive_addresses(self, account: Dict):
-        """Вычисляет адреса из приватных ключей и добавляет их в словарь"""
         evm_key = account.get("evm_private_key")
         sol_key = account.get("sol_private_key")
         if evm_key:
@@ -395,27 +404,22 @@ class AccountsManager:
         text = self.import_text_field.value
         if not text:
             return
-
         lines = text.strip().split('\n')
         new_accounts = []
         max_id = max([acc["id"] for acc in self.accounts], default=0)
-
         for line_num, line in enumerate(lines, 1):
             line = line.strip()
             if not line or line.startswith('#'):
                 continue
-
             parts = [part.strip() for part in line.split('|')]
             if len(parts) < 5:
                 print(f"Line {line_num}: недостаточно полей ({len(parts)}), ожидается 5, разделённых '|'.")
                 continue
-
             evm = parts[0]
             sol = parts[1]
             email = parts[2]
             twitter = parts[3]
             discord = parts[4]
-
             max_id += 1
             new_acc = {
                 "id": max_id,
@@ -427,7 +431,6 @@ class AccountsManager:
             }
             self._derive_addresses(new_acc)
             new_accounts.append(new_acc)
-
         if new_accounts:
             self.accounts.extend(new_accounts)
             save_accounts(self.accounts)
@@ -543,16 +546,14 @@ class AccountsManager:
             self.dialog_modal.open = False
             self.page.update()
 
-    # ---------- ПОДТВЕРЖДЕНИЕ УДАЛЕНИЯ ----------
+    # ---------- УДАЛЕНИЕ ----------
     def _confirm_delete(self, account_id):
         def close_dialog(e):
             dlg.open = False
             self.page.update()
-
         def confirm(e):
             self._delete_account(account_id)
             close_dialog(e)
-
         dlg = ft.AlertDialog(
             modal=True,
             title=ft.Text("Confirm deletion"),

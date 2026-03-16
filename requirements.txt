@@ -50,6 +50,7 @@ pycryptodome==3.23.0
 pydantic==2.12.5
 pydantic_core==2.41.5
 Pygments==2.19.2
+pyperclip==1.11.0
 python-dateutil==2.9.0.post0
 python-slugify==8.0.4
 pyunormalize==17.0.0
