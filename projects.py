@@ -8,6 +8,10 @@ from accounts import AccountsManager
 DATA_DIR = Path("data")
 PROJECTS_FILE = DATA_DIR / "projects.json"
 
+# Константы для сетей
+NETWORK_EVM = "EVM"
+NETWORK_SOLANA = "Solana"
+
 def ensure_data_dir():
     DATA_DIR.mkdir(exist_ok=True)
 
@@ -18,7 +22,12 @@ def load_projects() -> List[Dict[str, Any]]:
             json.dump([], f, indent=4, ensure_ascii=False)
         return []
     with open(PROJECTS_FILE, 'r', encoding='utf-8') as f:
-        return json.load(f)
+        data = json.load(f)
+        # Миграция: добавляем поле network для старых проектов (по умолчанию EVM)
+        for proj in data:
+            if "network" not in proj:
+                proj["network"] = NETWORK_EVM
+        return data
 
 def save_projects(projects: List[Dict[str, Any]]):
     ensure_data_dir()
@@ -46,6 +55,10 @@ class ProjectsManager:
         self.dialog_modal = None
         self.editing_project_id = None
         self.current_project_accounts = []
+
+        # Поля для выбора сети
+        self.network_radio = None
+        self.current_network = NETWORK_EVM
 
         self.filter_search = ft.TextField(
             label="Search projects",
@@ -100,6 +113,7 @@ class ProjectsManager:
 
     # ----- Вспомогательные методы -----
     def _format_tooltip(self, text: str, max_chars: int = 50) -> str:
+        """Разбивает длинный текст на строки по max_chars символов для компактной подсказки"""
         if not text:
             return text
         words = text.split(' ')
@@ -119,14 +133,19 @@ class ProjectsManager:
             lines.append(current_line)
         return '\n'.join(lines)
 
-    def _get_project_expenses(self, project_id: int) -> float:
-        if not self.expenses_manager:
-            return 0.0
-        total = 0.0
-        for exp in self.expenses_manager.expenses:
-            if exp.get("project_id") == project_id:
-                total += exp.get("amount", 0)
-        return total
+    def _get_project_finances(self, project_id: int):
+        """Возвращает (расходы, доходы) по проекту"""
+        expenses = 0.0
+        incomes = 0.0
+        if self.expenses_manager:
+            for exp in self.expenses_manager.expenses:
+                if exp.get("project_id") == project_id:
+                    amount = exp.get("amount", 0)
+                    if exp.get("type") == "expense":
+                        expenses += amount
+                    else:
+                        incomes += amount
+        return expenses, incomes
 
     def _get_status_color(self, status: str) -> ft.Colors:
         colors = {
@@ -137,9 +156,27 @@ class ProjectsManager:
         }
         return colors.get(status, ft.Colors.GREY_400)
 
+    def _get_account_display(self, acc: Dict, network: str) -> str:
+        """Возвращает строку для отображения аккаунта (адрес или ключ) с сокращением"""
+        if network == NETWORK_EVM:
+            address = acc.get("evm_address")
+            if address:
+                return address[:4] + "..." + address[-4:]
+            key = acc.get("evm_private_key", "")
+            if key:
+                return key[:4] + "..." + key[-4:]
+            return "No EVM"
+        else:  # solana
+            address = acc.get("solana_address")
+            if address:
+                return address[:4] + "..." + address[-4:]
+            key = acc.get("sol_private_key", "")
+            if key:
+                return key[:4] + "..." + key[-4:]
+            return "No Solana"
+
     def _matches_filters(self, project: Dict) -> bool:
         """Проверяет, соответствует ли проект текущим фильтрам"""
-        # Поиск по тексту
         if self.filter_search.value:
             search_text = self.filter_search.value.lower()
             name = project.get("name", "").lower()
@@ -148,20 +185,18 @@ class ProjectsManager:
             if not (search_text in name or search_text in desc or search_text in type_):
                 return False
 
-        # Фильтр по типу
         if self.filter_type.value != "all" and project.get("type") != self.filter_type.value:
             return False
 
-        # Фильтр по статусу
         if self.filter_status.value != "all" and project.get("status") != self.filter_status.value:
             return False
 
-        # Фильтр по расходам
         if self.filter_expense.value != "all":
-            expenses = self._get_project_expenses(project["id"])
-            if self.filter_expense.value == "with" and expenses <= 0:
+            expenses, incomes = self._get_project_finances(project["id"])
+            total = expenses + incomes  # общий оборот (может быть и расходы и доходы)
+            if self.filter_expense.value == "with" and total == 0:
                 return False
-            if self.filter_expense.value == "without" and expenses > 0:
+            if self.filter_expense.value == "without" and total > 0:
                 return False
 
         return True
@@ -173,11 +208,11 @@ class ProjectsManager:
         description = project.get("description", "")
         project_type = project.get("type", "other").capitalize()
         status = project.get("status", "unknown")
+        network = project.get("network", NETWORK_EVM)
         start = project.get("start_date", "")
         end = project.get("end_date", "")
         accounts_count = len(project.get("accounts", []))
-        expenses = self._get_project_expenses(project_id)
-        expenses_str = f"${expenses:.2f}" if expenses else "-"
+        expenses, incomes = self._get_project_finances(project_id)
 
         status_color = self._get_status_color(status)
 
@@ -204,7 +239,6 @@ class ProjectsManager:
             icon_size=22,
         )
 
-        # Прогресс-бар на основе дат
         progress_value = None
         if start and end:
             try:
@@ -223,6 +257,21 @@ class ProjectsManager:
             except:
                 progress_value = None
 
+        display_desc = description[:80] + "..." if len(description) > 80 else description
+        tooltip_desc = self._format_tooltip(description, 50)
+
+        # Строка с финансами: расходы и доходы
+        finance_row = ft.Column([
+            ft.Row([
+                ft.Icon(ft.Icons.TRENDING_DOWN, size=14, color=ft.Colors.RED_400),
+                ft.Text(f"-${expenses:.2f}", size=14, color=ft.Colors.RED_400, weight=ft.FontWeight.BOLD),
+            ], spacing=5) if expenses > 0 else ft.Container(),
+            ft.Row([
+                ft.Icon(ft.Icons.TRENDING_UP, size=14, color=ft.Colors.GREEN_400),
+                ft.Text(f"+${incomes:.2f}", size=14, color=ft.Colors.GREEN_400, weight=ft.FontWeight.BOLD),
+            ], spacing=5) if incomes > 0 else ft.Container(),
+        ], spacing=2)
+
         card_content = ft.Column([
             ft.Row([
                 ft.Container(
@@ -233,17 +282,21 @@ class ProjectsManager:
                 delete_btn,
             ], alignment=ft.MainAxisAlignment.START),
             ft.Text(
-                self._format_tooltip(description, 60),
+                display_desc,
                 size=13,
                 color=ft.Colors.GREY_400,
                 max_lines=2,
                 overflow=ft.TextOverflow.ELLIPSIS,
-                tooltip=description,
+                tooltip=tooltip_desc,
             ) if description else ft.Container(),
             ft.Divider(height=10, color=ft.Colors.GREY_800),
             ft.Row([
                 ft.Icon(ft.Icons.LABEL_OUTLINE, size=14, color=ft.Colors.GREY_400),
                 ft.Text(project_type, size=14),
+            ], spacing=5),
+            ft.Row([
+                ft.Icon(ft.Icons.DNS_OUTLINED, size=14, color=ft.Colors.GREY_400),  # иконка сети
+                ft.Text(network, size=14),
             ], spacing=5),
             ft.Row([
                 ft.Icon(ft.Icons.CALENDAR_TODAY, size=14, color=ft.Colors.GREY_400),
@@ -253,8 +306,8 @@ class ProjectsManager:
                 ft.Icon(ft.Icons.PEOPLE_OUTLINE, size=14, color=ft.Colors.GREY_400),
                 ft.Text(f"{accounts_count} accounts", size=14),
                 ft.Container(expand=True),
-                ft.Text(expenses_str, size=14, color=ft.Colors.GREEN_400, weight=ft.FontWeight.BOLD),
             ], spacing=5),
+            finance_row,
             ft.Container(height=5),
             ft.ProgressBar(value=progress_value, color=status_color, bgcolor=ft.Colors.GREY_800, height=6, border_radius=3) if progress_value is not None else ft.Container(),
         ])
@@ -284,7 +337,6 @@ class ProjectsManager:
             ),
         ])
 
-        # Строка поиска с кнопкой
         search_button = ft.IconButton(
             icon=ft.Icons.SEARCH,
             tooltip="Search",
@@ -295,14 +347,12 @@ class ProjectsManager:
             search_button,
         ])
 
-        # Строка фильтров (без кнопки Apply, так как on_select срабатывает автоматически)
         filters_row = ft.Row([
             self.filter_type,
             self.filter_status,
             self.filter_expense,
         ], spacing=10, wrap=True)
 
-        # Статистика (количество отфильтрованных проектов)
         filtered_projects = [p for p in self.projects if self._matches_filters(p)]
         stats_row = ft.Row([
             ft.Container(
@@ -359,13 +409,13 @@ class ProjectsManager:
         )
 
     def apply_filters(self, e):
-        """Обновляет представление при изменении фильтров"""
         self.update_content(self.get_view())
 
-    # ---------- Диалоги и функциональность ----------
+    # ---------- ДИАЛОГ ПРОЕКТА (с выбором сети) ----------
     def open_add_project_dialog(self, e: ft.ControlEvent = None):
         self.editing_project_id = None
         self.current_project_accounts = []
+        self.current_network = NETWORK_EVM
         self._show_project_dialog()
 
     def open_edit_project_dialog(self, e: ft.ControlEvent):
@@ -376,6 +426,7 @@ class ProjectsManager:
         project = next((p for p in self.projects if p["id"] == project_id), None)
         if project:
             self.current_project_accounts = project.get("accounts", [])
+            self.current_network = project.get("network", NETWORK_EVM)
             self._show_project_dialog(project)
 
     def _show_project_dialog(self, project: Optional[Dict] = None):
@@ -423,11 +474,20 @@ class ProjectsManager:
             hint_text="2025-12-31",
         )
 
+        self.network_radio = ft.RadioGroup(
+            content=ft.Row([
+                ft.Radio(value=NETWORK_EVM, label="EVM", fill_color=ft.Colors.BLUE_400),
+                ft.Radio(value=NETWORK_SOLANA, label="Solana", fill_color=ft.Colors.PURPLE_400),
+            ]),
+            value=self.current_network,
+            on_change=self.on_network_change,
+        )
+
         self.search_field = ft.TextField(
             label="Search accounts",
             prefix_icon=ft.Icons.SEARCH,
             on_change=self.filter_accounts,
-            hint_text="Type to filter by private key or email",
+            hint_text="Type to filter by address or email",
         )
 
         select_all_btn = ft.TextButton("Select All", on_click=self.select_all_accounts)
@@ -447,6 +507,7 @@ class ProjectsManager:
                     ft.Row([self.start_field, self.end_field], spacing=10),
                     ft.Divider(height=10, color=ft.Colors.GREY_800),
                     ft.Text("Select accounts for this project:", size=14, weight=ft.FontWeight.BOLD),
+                    self.network_radio,
                     ft.Row([select_all_btn, clear_all_btn], alignment=ft.MainAxisAlignment.START),
                     self.search_field,
                     ft.Container(
@@ -456,7 +517,7 @@ class ProjectsManager:
                         padding=10,
                         height=300,
                     ),
-                ], scroll=ft.ScrollMode.AUTO, height=600),
+                ], scroll=ft.ScrollMode.AUTO, height=650),
                 width=750,
             ),
             actions=[
@@ -476,19 +537,30 @@ class ProjectsManager:
 
         checkboxes = []
         filter_text = filter_text.lower()
+        network = self.network_radio.value if self.network_radio else self.current_network
+
         for acc in self.accounts_manager.accounts:
+            if network == NETWORK_EVM:
+                key = acc.get("evm_private_key", "")
+                addr = acc.get("evm_address")
+            else:
+                key = acc.get("sol_private_key", "")
+                addr = acc.get("solana_address")
+            if not key:
+                continue
+
             searchable_string = (
                 f"id:{acc['id']} "
-                f"evm:{acc.get('evm_private_key', '')} "
-                f"sol:{acc.get('sol_private_key', '')} "
+                f"key:{key} "
+                f"addr:{addr or ''} "
                 f"email:{acc.get('email', '')}"
             ).lower()
-
             if filter_text and filter_text not in searchable_string:
                 continue
 
-            evm_short = acc.get('evm_private_key', '')[:8] + "..." if acc.get('evm_private_key') else "No key"
-            label = f"ID {acc['id']} ({evm_short})"
+            network_label = "EVM" if network == NETWORK_EVM else "Solana"
+            display = self._get_account_display(acc, network)
+            label = f"{network_label} {acc['id']} ({display})"
             cb = ft.Checkbox(
                 label=label,
                 value=acc["id"] in self.current_project_accounts,
@@ -497,6 +569,11 @@ class ProjectsManager:
             checkboxes.append(cb)
 
         self.accounts_list.controls = checkboxes if checkboxes else [ft.Text("No matching accounts", color=ft.Colors.GREY_400)]
+        self.page.update()
+
+    def on_network_change(self, e):
+        self.current_network = self.network_radio.value
+        self._build_accounts_list(self.search_field.value if self.search_field else "")
         self.page.update()
 
     def filter_accounts(self, e):
@@ -536,6 +613,7 @@ class ProjectsManager:
                 "description": self.desc_field.value,
                 "status": self.status_dropdown.value,
                 "type": self.type_dropdown.value,
+                "network": self.network_radio.value,
                 "start_date": self.start_field.value,
                 "end_date": self.end_field.value,
                 "accounts": selected_accounts,
@@ -549,6 +627,7 @@ class ProjectsManager:
                         "description": self.desc_field.value,
                         "status": self.status_dropdown.value,
                         "type": self.type_dropdown.value,
+                        "network": self.network_radio.value,
                         "start_date": self.start_field.value,
                         "end_date": self.end_field.value,
                         "accounts": selected_accounts,
