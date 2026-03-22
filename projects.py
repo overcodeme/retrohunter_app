@@ -34,7 +34,6 @@ def load_projects() -> List[Dict[str, Any]]:
     with open(PROJECTS_FILE, "r", encoding="utf-8") as f:
         data = json.load(f)
 
-    # Добавляем недостающие поля (для совместимости со старыми файлами)
     for proj in data:
         proj.setdefault("network", NETWORK_EVM)
         proj.setdefault("image_path", None)
@@ -65,7 +64,7 @@ class ProjectsManager:
         self.expenses_manager = None
         self.projects = load_projects()
 
-        # ── UI‑элементы диалога ───────────────────────────────────────
+        # UI‑элементы диалога
         self.name_field: Optional[ft.TextField] = None
         self.desc_field: Optional[ft.TextField] = None
         self.status_dropdown: Optional[ft.Dropdown] = None
@@ -78,14 +77,15 @@ class ProjectsManager:
         self.editing_project_id: Optional[int] = None
         self.current_project_accounts: List[int] = []
 
-        # ── Выбор сети и изображения ───────────────────────────────────
+        # Выбор сети и изображения
         self.network_radio: Optional[ft.RadioGroup] = None
         self.current_network = NETWORK_EVM
         self.image_preview: Optional[ft.Container] = None
         self.selected_image_path: Optional[str] = None
         self.file_picker: Optional[ft.FilePicker] = None
+        self.image_cleared: bool = False                     # <<< NEW >>> флаг очистки
 
-        # ── Фильтры ───────────────────────────────────────────────────────
+        # Фильтры
         self.filter_search = ft.TextField(
             label="Search projects",
             prefix_icon=ft.Icons.SEARCH,
@@ -93,7 +93,6 @@ class ProjectsManager:
             on_submit=self.apply_filters,
             expand=True,
         )
-
         self.filter_type = ft.Dropdown(
             label="Type",
             options=[ft.dropdown.Option("all", "All types")] + [
@@ -108,7 +107,6 @@ class ProjectsManager:
             width=150,
             on_select=self.apply_filters,
         )
-
         self.filter_status = ft.Dropdown(
             label="Status",
             options=[ft.dropdown.Option("all", "All statuses")] + [
@@ -121,7 +119,6 @@ class ProjectsManager:
             width=150,
             on_select=self.apply_filters,
         )
-
         self.filter_expense = ft.Dropdown(
             label="Expenses",
             options=[
@@ -141,7 +138,6 @@ class ProjectsManager:
         self.expenses_manager = expenses_manager
 
     def _format_tooltip(self, text: str, max_chars: int = 50) -> str:
-        """Разбивает длинный текст на строки, не превышающие max_chars."""
         if not text:
             return text
         words = text.split()
@@ -191,7 +187,6 @@ class ProjectsManager:
             return f"{key[:4]}...{key[-4:]}" if key else "No Solana"
 
     def _matches_filters(self, project: Dict) -> bool:
-        # Поиск по тексту
         if self.filter_search.value:
             txt = self.filter_search.value.lower()
             if not (
@@ -200,16 +195,10 @@ class ProjectsManager:
                 or txt in project.get("type", "").lower()
             ):
                 return False
-
-        # Фильтр по типу
         if self.filter_type.value != "all" and project.get("type") != self.filter_type.value:
             return False
-
-        # Фильтр по статусу
         if self.filter_status.value != "all" and project.get("status") != self.filter_status.value:
             return False
-
-        # Фильтр по наличию расходов/доходов
         if self.filter_expense.value != "all":
             expenses, incomes = self._get_project_finances(project["id"])
             total = expenses + incomes
@@ -217,11 +206,10 @@ class ProjectsManager:
                 return False
             if self.filter_expense.value == "without" and total > 0:
                 return False
-
         return True
 
     # --------------------------------------------------------------------- #
-    #  Сборка карточки проекта
+    #  Карточка проекта
     # --------------------------------------------------------------------- #
     def _build_project_card(self, project: Dict) -> ft.Container:
         project_id = project["id"]
@@ -235,14 +223,12 @@ class ProjectsManager:
         accounts_cnt = len(project.get("accounts", []))
         expenses, incomes = self._get_project_finances(project_id)
 
-        # Цвет статуса
         status_color = self._get_status_color(status)
 
-        # Аватарка (изображение проекта)
         image_path = project.get("image_path")
         if image_path and os.path.exists(image_path):
             avatar = ft.Container(
-                content=ft.Image(src=image_path, fit=ft.ImageFit.COVER),
+                content=ft.Image(src=image_path, fit=ft.BoxFit.COVER),
                 width=40,
                 height=40,
                 border_radius=20,
@@ -260,7 +246,6 @@ class ProjectsManager:
                 margin=ft.margin.only(right=10),
             )
 
-        # Кнопки редактировать / удалить
         edit_btn = ft.IconButton(
             icon=ft.Icons.EDIT_OUTLINED,
             icon_color=ft.Colors.BLUE_400,
@@ -284,7 +269,6 @@ class ProjectsManager:
             icon_size=22,
         )
 
-        # Прогресс по датам
         progress_value: Optional[float] = None
         if start and end:
             try:
@@ -303,22 +287,16 @@ class ProjectsManager:
             except Exception:
                 progress_value = None
 
-        # Обрезка описания
         short_desc = description[:80] + ("…" if len(description) > 80 else "")
         tooltip_desc = self._format_tooltip(description, 50)
 
-        # Финансы
         finance_row = ft.Column(
             [
                 ft.Row(
                     [
                         ft.Icon(ft.Icons.TRENDING_DOWN, size=14, color=ft.Colors.RED_400),
-                        ft.Text(
-                            f"-${expenses:.2f}",
-                            size=14,
-                            color=ft.Colors.RED_400,
-                            weight=ft.FontWeight.BOLD,
-                        ),
+                        ft.Text(f"-${expenses:.2f}", size=14, color=ft.Colors.RED_400,
+                                weight=ft.FontWeight.BOLD),
                     ],
                     spacing=5,
                 )
@@ -327,12 +305,8 @@ class ProjectsManager:
                 ft.Row(
                     [
                         ft.Icon(ft.Icons.TRENDING_UP, size=14, color=ft.Colors.GREEN_400),
-                        ft.Text(
-                            f"+${incomes:.2f}",
-                            size=14,
-                            color=ft.Colors.GREEN_400,
-                            weight=ft.FontWeight.BOLD,
-                        ),
+                        ft.Text(f"+${incomes:.2f}", size=14, color=ft.Colors.GREEN_400,
+                                weight=ft.FontWeight.BOLD),
                     ],
                     spacing=5,
                 )
@@ -342,7 +316,6 @@ class ProjectsManager:
             spacing=2,
         )
 
-        # Содержимое карточки
         card_content = ft.Column(
             [
                 ft.Row(
@@ -352,18 +325,11 @@ class ProjectsManager:
                             [
                                 ft.Row(
                                     [
-                                        ft.Container(
-                                            width=12,
-                                            height=12,
-                                            bgcolor=status_color,
-                                            border_radius=6,
-                                        ),
-                                        ft.Text(
-                                            name,
-                                            size=18,
-                                            weight=ft.FontWeight.BOLD,
-                                            expand=True,
-                                        ),
+                                        ft.Container(width=12, height=12,
+                                                     bgcolor=status_color,
+                                                     border_radius=6),
+                                        ft.Text(name, size=18,
+                                                weight=ft.FontWeight.BOLD, expand=True),
                                         edit_btn,
                                         delete_btn,
                                     ],
@@ -386,35 +352,15 @@ class ProjectsManager:
                     alignment=ft.MainAxisAlignment.START,
                 ),
                 ft.Divider(height=10, color=ft.Colors.GREY_800),
-                ft.Row(
-                    [
-                        ft.Icon(ft.Icons.LABEL_OUTLINE, size=14, color=ft.Colors.GREY_400),
-                        ft.Text(proj_type, size=14),
-                    ],
-                    spacing=5,
-                ),
-                ft.Row(
-                    [
-                        ft.Icon(ft.Icons.DNS_OUTLINED, size=14, color=ft.Colors.GREY_400),
-                        ft.Text(network, size=14),
-                    ],
-                    spacing=5,
-                ),
-                ft.Row(
-                    [
-                        ft.Icon(ft.Icons.CALENDAR_TODAY, size=14, color=ft.Colors.GREY_400),
-                        ft.Text(f"{start} - {end}", size=14),
-                    ],
-                    spacing=5,
-                ),
-                ft.Row(
-                    [
-                        ft.Icon(ft.Icons.PEOPLE_OUTLINE, size=14, color=ft.Colors.GREY_400),
+                ft.Row([ft.Icon(ft.Icons.LABEL_OUTLINE, size=14, color=ft.Colors.GREY_400),
+                        ft.Text(proj_type, size=14)], spacing=5),
+                ft.Row([ft.Icon(ft.Icons.DNS_OUTLINED, size=14, color=ft.Colors.GREY_400),
+                        ft.Text(network, size=14)], spacing=5),
+                ft.Row([ft.Icon(ft.Icons.CALENDAR_TODAY, size=14, color=ft.Colors.GREY_400),
+                        ft.Text(f"{start} - {end}", size=14)], spacing=5),
+                ft.Row([ft.Icon(ft.Icons.PEOPLE_OUTLINE, size=14, color=ft.Colors.GREY_400),
                         ft.Text(f"{accounts_cnt} accounts", size=14),
-                        ft.Container(expand=True),
-                    ],
-                    spacing=5,
-                ),
+                        ft.Container(expand=True)], spacing=5),
                 finance_row,
                 ft.Container(height=5),
                 ft.ProgressBar(
@@ -436,12 +382,13 @@ class ProjectsManager:
             border_radius=12,
             bgcolor=ft.Colors.GREY_900,
             shadow=ft.BoxShadow(
-                blur_radius=10, color=ft.Colors.with_opacity(0.3, ft.Colors.BLACK)
+                blur_radius=10,
+                color=ft.Colors.with_opacity(0.3, ft.Colors.BLACK),
             ),
         )
 
     # --------------------------------------------------------------------- #
-    #  Основное представление (список проектов)
+    #  Основное представление
     # --------------------------------------------------------------------- #
     def get_view(self) -> ft.Container:
         header = ft.Row(
@@ -458,34 +405,27 @@ class ProjectsManager:
                 ),
             ]
         )
-
         search_btn = ft.IconButton(
             icon=ft.Icons.SEARCH, tooltip="Search", on_click=self.apply_filters
         )
         search_row = ft.Row([self.filter_search, search_btn])
-
         filters_row = ft.Row(
             [self.filter_type, self.filter_status, self.filter_expense],
             spacing=10,
             wrap=True,
         )
-
         filtered = [p for p in self.projects if self._matches_filters(p)]
         stats_row = ft.Row(
             [
                 ft.Container(
                     content=ft.Row(
                         [
-                            ft.Icon(
-                                ft.Icons.FOLDER_OUTLINED,
-                                size=20,
-                                color=ft.Colors.GREEN_400,
-                            ),
-                            ft.Text(
-                                f"Projects: {len(filtered)} / {len(self.projects)}",
-                                size=16,
-                                weight=ft.FontWeight.W_500,
-                            ),
+                            ft.Icon(ft.Icons.FOLDER_OUTLINED,
+                                    size=20,
+                                    color=ft.Colors.GREEN_400),
+                            ft.Text(f"Projects: {len(filtered)} / {len(self.projects)}",
+                                    size=16,
+                                    weight=ft.FontWeight.W_500),
                         ],
                         spacing=10,
                     ),
@@ -496,7 +436,6 @@ class ProjectsManager:
             ],
             alignment=ft.MainAxisAlignment.START,
         )
-
         if filtered:
             cards = [self._build_project_card(p) for p in filtered]
             projects_grid = ft.GridView(
@@ -513,20 +452,14 @@ class ProjectsManager:
             grid_container = ft.Container(
                 content=ft.Column(
                     [
-                        ft.Icon(
-                            ft.Icons.FOLDER_OUTLINED,
-                            size=64,
-                            color=ft.Colors.GREY_600,
-                        ),
-                        ft.Text(
-                            "No projects match your filters",
-                            size=20,
-                            color=ft.Colors.GREY_400,
-                        ),
-                        ft.Text(
-                            "Try adjusting search or filters",
-                            color=ft.Colors.GREY_500,
-                        ),
+                        ft.Icon(ft.Icons.FOLDER_OUTLINED,
+                                size=64,
+                                color=ft.Colors.GREY_600),
+                        ft.Text("No projects match your filters",
+                                size=20,
+                                color=ft.Colors.GREY_400),
+                        ft.Text("Try adjusting search or filters",
+                                color=ft.Colors.GREY_500),
                     ],
                     horizontal_alignment=ft.CrossAxisAlignment.CENTER,
                 ),
@@ -534,7 +467,6 @@ class ProjectsManager:
                 alignment=ft.Alignment.CENTER,
                 height=400,
             )
-
         return ft.Container(
             content=ft.Column(
                 [
@@ -556,13 +488,14 @@ class ProjectsManager:
         self.update_content(self.get_view())
 
     # --------------------------------------------------------------------- #
-    #  Диалог создания / редактирования проекта
+    #  Диалог добавления / редактирования
     # --------------------------------------------------------------------- #
     def open_add_project_dialog(self, e: ft.ControlEvent = None):
         self.editing_project_id = None
         self.current_project_accounts = []
         self.current_network = NETWORK_EVM
         self.selected_image_path = None
+        self.image_cleared = False                     # <<< NEW >>> сбрасываем флаг
         self._show_project_dialog()
 
     def open_edit_project_dialog(self, e: ft.ControlEvent):
@@ -575,63 +508,56 @@ class ProjectsManager:
             self.current_project_accounts = project.get("accounts", [])
             self.current_network = project.get("network", NETWORK_EVM)
             self.selected_image_path = project.get("image_path")
+            self.image_cleared = False                 # <<< NEW >>> сбрасываем флаг
             self._show_project_dialog(project)
 
     # --------------------------------------------------------------------- #
-    #  Асинхронный выбор изображения (новый API Flet v1+)
+    #  Выбор изображения (новый async‑API)
     # --------------------------------------------------------------------- #
     async def _pick_image_async(self, e):
-        """Асинхронно открывает диалог выбора файла."""
-        # Создаём FilePicker как Service
         file_picker = ft.FilePicker()
-        
-        # Добавляем в services (не в overlay!)
         self.page.services.append(file_picker)
-        
-        # Асинхронно вызываем pick_files
+
         files = await file_picker.pick_files(
             allow_multiple=False,
             allowed_extensions=["png", "jpg", "jpeg", "gif"],
         )
-        
-        # Обрабатываем результат
         if files and len(files) > 0:
-            # В desktop-режиме path доступен, в web - нужно использовать bytes
-            picked_file = files[0]
-            
-            if picked_file.path:
-                # Desktop: путь к файлу
-                self.selected_image_path = picked_file.path
-            elif picked_file.bytes:
-                # Web: сохраняем байты во временный файл
+            picked = files[0]
+            if picked.path:
+                self.selected_image_path = picked.path
+            elif picked.bytes:
                 import tempfile
-                ext = os.path.splitext(picked_file.name)[1] or ".png"
+                ext = os.path.splitext(picked.name)[1] or ".png"
                 with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp:
-                    tmp.write(picked_file.bytes)
+                    tmp.write(picked.bytes)
                     self.selected_image_path = tmp.name
             else:
-                print(f"File selected but no path or bytes: {picked_file.name}")
                 return
-            
-            # Обновляем превью
+
+            # Пользователь выбрал новое изображение → сбрасываем флаг очистки
+            self.image_cleared = False                # <<< NEW >>>
             if self.image_preview:
                 self.image_preview.content = ft.Image(
                     src=self.selected_image_path,
-                    fit=ft.ImageFit.COVER,
+                    fit=ft.BoxFit.COVER,
                 )
                 self.image_preview.update()
-        
         self.page.update()
 
     def _clear_image(self):
+        """Сбросить выбранное изображение."""
         self.selected_image_path = None
+        self.image_cleared = True                     # <<< NEW >>> помечаем, что пользователь захотел удалить
         if self.image_preview:
             self.image_preview.content = ft.Icon(ft.Icons.IMAGE, size=48)
             self.image_preview.update()
         self.page.update()
 
+    # --------------------------------------------------------------------- #
+    #  Формирование диалога
+    # --------------------------------------------------------------------- #
     def _show_project_dialog(self, project: Optional[Dict] = None):
-        # ---------- Поля ввода ----------
         self.name_field = ft.TextField(
             label="Project Name *",
             value=project.get("name") if project else "",
@@ -675,40 +601,30 @@ class ProjectsManager:
             value=project.get("end_date") if project else "",
             hint_text="2025-12-31",
         )
-
-        # ---------- Радио‑группа сети ----------
         self.network_radio = ft.RadioGroup(
             content=ft.Row(
                 [
-                    ft.Radio(
-                        value=NETWORK_EVM,
-                        label="EVM",
-                        fill_color=ft.Colors.BLUE_400,
-                    ),
-                    ft.Radio(
-                        value=NETWORK_SOLANA,
-                        label="Solana",
-                        fill_color=ft.Colors.PURPLE_400,
-                    ),
+                    ft.Radio(value=NETWORK_EVM,
+                             label="EVM",
+                             fill_color=ft.Colors.BLUE_400),
+                    ft.Radio(value=NETWORK_SOLANA,
+                             label="Solana",
+                             fill_color=ft.Colors.PURPLE_400),
                 ]
             ),
             value=self.current_network,
             on_change=self.on_network_change,
         )
 
-        # ---------- Кнопка выбора изображения ----------
-        # Используем ft.Button (не ElevatedButton) для async-обработчика
+        # Кнопка выбора изображения
         choose_image_btn = ft.Button(
             content="Choose image",
             icon=ft.Icons.UPLOAD_FILE,
             on_click=self._pick_image_async,
         )
-        
         self.image_preview = ft.Container(
-            content=ft.Image(
-                src=self.selected_image_path,
-                fit=ft.ImageFit.COVER,
-            )
+            content=ft.Image(src=self.selected_image_path,
+                             fit=ft.BoxFit.COVER)
             if self.selected_image_path and os.path.exists(self.selected_image_path)
             else ft.Icon(ft.Icons.IMAGE, size=48),
             width=80,
@@ -723,7 +639,7 @@ class ProjectsManager:
             on_click=lambda _: self._clear_image(),
         )
 
-        # ---------- Поиск аккаунтов ----------
+        # Поиск аккаунтов
         self.search_field = ft.TextField(
             label="Search accounts",
             prefix_icon=ft.Icons.SEARCH,
@@ -736,7 +652,6 @@ class ProjectsManager:
         self.accounts_list = ft.Column(scroll=ft.ScrollMode.AUTO, height=300)
         self._build_accounts_list()
 
-        # ---------- Сам диалог ----------
         self.dialog_modal = ft.AlertDialog(
             modal=True,
             title=ft.Text("Edit Project" if project else "Add New Project"),
@@ -748,26 +663,20 @@ class ProjectsManager:
                         ft.Row([self.status_dropdown, self.type_dropdown], spacing=10),
                         ft.Row([self.start_field, self.end_field], spacing=10),
                         ft.Divider(height=10, color=ft.Colors.GREY_800),
-                        ft.Text(
-                            "Project image:",
-                            size=14,
-                            weight=ft.FontWeight.BOLD,
-                        ),
-                        ft.Row(
-                            [choose_image_btn, self.image_preview, clear_image_btn],
-                            spacing=10,
-                        ),
+                        ft.Text("Project image:",
+                                size=14,
+                                weight=ft.FontWeight.BOLD),
+                        ft.Row([choose_image_btn,
+                                self.image_preview,
+                                clear_image_btn],
+                               spacing=10),
                         ft.Divider(height=10, color=ft.Colors.GREY_800),
-                        ft.Text(
-                            "Select accounts for this project:",
-                            size=14,
-                            weight=ft.FontWeight.BOLD,
-                        ),
+                        ft.Text("Select accounts for this project:",
+                                size=14,
+                                weight=ft.FontWeight.BOLD),
                         self.network_radio,
-                        ft.Row(
-                            [select_all_btn, clear_all_btn],
-                            alignment=ft.MainAxisAlignment.START,
-                        ),
+                        ft.Row([select_all_btn, clear_all_btn],
+                               alignment=ft.MainAxisAlignment.START),
                         self.search_field,
                         ft.Container(
                             content=self.accounts_list,
@@ -788,15 +697,13 @@ class ProjectsManager:
             ],
             actions_alignment=ft.MainAxisAlignment.END,
         )
-
         self.page.show_dialog(self.dialog_modal)
         self.page.update()
 
     # --------------------------------------------------------------------- #
-    #  Сохранение / удаление изображения
+    #  Сохранение / удаление изображений
     # --------------------------------------------------------------------- #
     def _save_image(self, project_id: int) -> Optional[str]:
-        """Копирует выбранный файл в папку data/images и возвращает путь."""
         if not self.selected_image_path or not os.path.exists(self.selected_image_path):
             return None
         ext = os.path.splitext(self.selected_image_path)[1]
@@ -848,7 +755,11 @@ class ProjectsManager:
             network_label = "EVM" if network == NETWORK_EVM else "Solana"
             display = self._get_account_display(acc, network)
             label = f"{network_label} {acc['id']} ({display})"
-            cb = ft.Checkbox(label=label, value=acc["id"] in self.current_project_accounts, data=acc["id"])
+            cb = ft.Checkbox(
+                label=label,
+                value=acc["id"] in self.current_project_accounts,
+                data=acc["id"],
+            )
             checkboxes.append(cb)
 
         self.accounts_list.controls = (
@@ -887,7 +798,7 @@ class ProjectsManager:
     def save_project(self, e: ft.ControlEvent = None):
         name = self.name_field.value.strip()
         if not name:
-            return  # Можно добавить всплывающее сообщение, но сейчас просто игнорируем
+            return
 
         selected_accounts = [
             cb.data
@@ -895,8 +806,8 @@ class ProjectsManager:
             if isinstance(cb, ft.Checkbox) and cb.value
         ]
 
+        # ---------- Новый проект ----------
         if self.editing_project_id is None:
-            # Создаём новый проект
             new_id = max([p["id"] for p in self.projects], default=0) + 1
             image_path = self._save_image(new_id) if self.selected_image_path else None
             new_project = {
@@ -912,11 +823,15 @@ class ProjectsManager:
                 "image_path": image_path,
             }
             self.projects.append(new_project)
+
+        # ---------- Обновление существующего ----------
         else:
-            # Обновляем существующий проект
+            # По умолчанию оставляем старый путь
             new_image_path: Optional[str] = None
+
+            # Если пользователь выбрал новое изображение
             if self.selected_image_path:
-                # Удаляем старое изображение, если есть
+                # Удаляем старое (если есть)
                 old_path = None
                 for p in self.projects:
                     if p["id"] == self.editing_project_id:
@@ -926,6 +841,19 @@ class ProjectsManager:
                     self._delete_image(old_path)
                 new_image_path = self._save_image(self.editing_project_id)
 
+            # Если пользователь **очистил** изображение
+            elif self.image_cleared:
+                # Удаляем старое изображение (если есть)
+                old_path = None
+                for p in self.projects:
+                    if p["id"] == self.editing_project_id:
+                        old_path = p.get("image_path")
+                        break
+                if old_path:
+                    self._delete_image(old_path)
+                new_image_path = None                       # <-- явно ставим None
+
+            # Обновляем проект
             for proj in self.projects:
                 if proj["id"] == self.editing_project_id:
                     proj.update(
@@ -939,18 +867,21 @@ class ProjectsManager:
                             "end_date": self.end_field.value,
                             "accounts": selected_accounts,
                             "image_path": new_image_path
-                            if new_image_path is not None
+                            if (new_image_path is not None or self.image_cleared)
                             else proj.get("image_path"),
                         }
                     )
                     break
 
         save_projects(self.projects)
+
+        # Сбрасываем флаг очистки, чтобы последующие операции не «запомнили» удаление
+        self.image_cleared = False                     # <<< NEW >>>
         self.close_dialog()
         self.update_content(self.get_view())
 
     # --------------------------------------------------------------------- #
-    #  Удаление проекта (с подтверждением)
+    #  Удаление проекта (подтверждение)
     # --------------------------------------------------------------------- #
     def _confirm_delete(self, project_id: int):
         def close_dialog(e):
@@ -958,7 +889,6 @@ class ProjectsManager:
             self.page.update()
 
         def confirm(e):
-            # Удаляем изображение, если оно существует
             for p in self.projects:
                 if p["id"] == project_id and p.get("image_path"):
                     self._delete_image(p["image_path"])
