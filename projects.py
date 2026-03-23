@@ -7,9 +7,7 @@ from pathlib import Path
 from typing import List, Dict, Any, Optional
 from accounts import AccountsManager
 
-# ──────────────────────────────────────────────────────────────────────────────
-# Константы и утилиты
-# ──────────────────────────────────────────────────────────────────────────────
+
 DATA_DIR = Path("data")
 PROJECTS_FILE = DATA_DIR / "projects.json"
 IMAGES_DIR = DATA_DIR / "images"
@@ -40,17 +38,12 @@ def load_projects() -> List[Dict[str, Any]]:
 
     return data
 
-
 def save_projects(projects: List[Dict[str, Any]]) -> None:
     """Записывает список проектов в JSON‑файл."""
     ensure_data_dir()
     with open(PROJECTS_FILE, "w", encoding="utf-8") as f:
         json.dump(projects, f, indent=4, ensure_ascii=False)
 
-
-# ──────────────────────────────────────────────────────────────────────────────
-# Основной класс‑менеджер
-# ──────────────────────────────────────────────────────────────────────────────
 class ProjectsManager:
     def __init__(
         self,
@@ -64,7 +57,6 @@ class ProjectsManager:
         self.expenses_manager = None
         self.projects = load_projects()
 
-        # UI‑элементы диалога
         self.name_field: Optional[ft.TextField] = None
         self.desc_field: Optional[ft.TextField] = None
         self.status_dropdown: Optional[ft.Dropdown] = None
@@ -77,15 +69,13 @@ class ProjectsManager:
         self.editing_project_id: Optional[int] = None
         self.current_project_accounts: List[int] = []
 
-        # Выбор сети и изображения
         self.network_radio: Optional[ft.RadioGroup] = None
         self.current_network = NETWORK_EVM
         self.image_preview: Optional[ft.Container] = None
         self.selected_image_path: Optional[str] = None
         self.file_picker: Optional[ft.FilePicker] = None
-        self.image_cleared: bool = False                     # <<< NEW >>> флаг очистки
+        self.image_cleared: bool = False                 
 
-        # Фильтры
         self.filter_search = ft.TextField(
             label="Search projects",
             prefix_icon=ft.Icons.SEARCH,
@@ -131,9 +121,6 @@ class ProjectsManager:
             on_select=self.apply_filters,
         )
 
-    # --------------------------------------------------------------------- #
-    #  Вспомогательные методы
-    # --------------------------------------------------------------------- #
     def set_expenses_manager(self, expenses_manager) -> None:
         self.expenses_manager = expenses_manager
 
@@ -208,9 +195,6 @@ class ProjectsManager:
                 return False
         return True
 
-    # --------------------------------------------------------------------- #
-    #  Карточка проекта
-    # --------------------------------------------------------------------- #
     def _build_project_card(self, project: Dict) -> ft.Container:
         project_id = project["id"]
         name = project.get("name", "")
@@ -387,9 +371,6 @@ class ProjectsManager:
             ),
         )
 
-    # --------------------------------------------------------------------- #
-    #  Основное представление
-    # --------------------------------------------------------------------- #
     def get_view(self) -> ft.Container:
         header = ft.Row(
             [
@@ -487,15 +468,12 @@ class ProjectsManager:
     def apply_filters(self, e):
         self.update_content(self.get_view())
 
-    # --------------------------------------------------------------------- #
-    #  Диалог добавления / редактирования
-    # --------------------------------------------------------------------- #
     def open_add_project_dialog(self, e: ft.ControlEvent = None):
         self.editing_project_id = None
         self.current_project_accounts = []
         self.current_network = NETWORK_EVM
         self.selected_image_path = None
-        self.image_cleared = False                     # <<< NEW >>> сбрасываем флаг
+        self.image_cleared = False 
         self._show_project_dialog()
 
     def open_edit_project_dialog(self, e: ft.ControlEvent):
@@ -508,12 +486,9 @@ class ProjectsManager:
             self.current_project_accounts = project.get("accounts", [])
             self.current_network = project.get("network", NETWORK_EVM)
             self.selected_image_path = project.get("image_path")
-            self.image_cleared = False                 # <<< NEW >>> сбрасываем флаг
+            self.image_cleared = False              
             self._show_project_dialog(project)
 
-    # --------------------------------------------------------------------- #
-    #  Выбор изображения (новый async‑API)
-    # --------------------------------------------------------------------- #
     async def _pick_image_async(self, e):
         file_picker = ft.FilePicker()
         self.page.services.append(file_picker)
@@ -535,8 +510,7 @@ class ProjectsManager:
             else:
                 return
 
-            # Пользователь выбрал новое изображение → сбрасываем флаг очистки
-            self.image_cleared = False                # <<< NEW >>>
+            self.image_cleared = False           
             if self.image_preview:
                 self.image_preview.content = ft.Image(
                     src=self.selected_image_path,
@@ -548,15 +522,12 @@ class ProjectsManager:
     def _clear_image(self):
         """Сбросить выбранное изображение."""
         self.selected_image_path = None
-        self.image_cleared = True                     # <<< NEW >>> помечаем, что пользователь захотел удалить
+        self.image_cleared = True
         if self.image_preview:
             self.image_preview.content = ft.Icon(ft.Icons.IMAGE, size=48)
             self.image_preview.update()
         self.page.update()
 
-    # --------------------------------------------------------------------- #
-    #  Формирование диалога
-    # --------------------------------------------------------------------- #
     def _show_project_dialog(self, project: Optional[Dict] = None):
         self.name_field = ft.TextField(
             label="Project Name *",
@@ -616,7 +587,6 @@ class ProjectsManager:
             on_change=self.on_network_change,
         )
 
-        # Кнопка выбора изображения
         choose_image_btn = ft.Button(
             content="Choose image",
             icon=ft.Icons.UPLOAD_FILE,
@@ -639,7 +609,6 @@ class ProjectsManager:
             on_click=lambda _: self._clear_image(),
         )
 
-        # Поиск аккаунтов
         self.search_field = ft.TextField(
             label="Search accounts",
             prefix_icon=ft.Icons.SEARCH,
@@ -700,9 +669,6 @@ class ProjectsManager:
         self.page.show_dialog(self.dialog_modal)
         self.page.update()
 
-    # --------------------------------------------------------------------- #
-    #  Сохранение / удаление изображений
-    # --------------------------------------------------------------------- #
     def _save_image(self, project_id: int) -> Optional[str]:
         if not self.selected_image_path or not os.path.exists(self.selected_image_path):
             return None
@@ -720,9 +686,6 @@ class ProjectsManager:
             except Exception:
                 pass
 
-    # --------------------------------------------------------------------- #
-    #  Список аккаунтов
-    # --------------------------------------------------------------------- #
     def _build_accounts_list(self, filter_text: str = "") -> None:
         if not self.accounts_manager or not self.accounts_manager.accounts:
             self.accounts_list.controls = [
@@ -792,9 +755,6 @@ class ProjectsManager:
             self.dialog_modal.open = False
             self.page.update()
 
-    # --------------------------------------------------------------------- #
-    #  Сохранение проекта
-    # --------------------------------------------------------------------- #
     def save_project(self, e: ft.ControlEvent = None):
         name = self.name_field.value.strip()
         if not name:
@@ -806,7 +766,6 @@ class ProjectsManager:
             if isinstance(cb, ft.Checkbox) and cb.value
         ]
 
-        # ---------- Новый проект ----------
         if self.editing_project_id is None:
             new_id = max([p["id"] for p in self.projects], default=0) + 1
             image_path = self._save_image(new_id) if self.selected_image_path else None
@@ -824,14 +783,10 @@ class ProjectsManager:
             }
             self.projects.append(new_project)
 
-        # ---------- Обновление существующего ----------
         else:
-            # По умолчанию оставляем старый путь
             new_image_path: Optional[str] = None
 
-            # Если пользователь выбрал новое изображение
             if self.selected_image_path:
-                # Удаляем старое (если есть)
                 old_path = None
                 for p in self.projects:
                     if p["id"] == self.editing_project_id:
@@ -841,9 +796,7 @@ class ProjectsManager:
                     self._delete_image(old_path)
                 new_image_path = self._save_image(self.editing_project_id)
 
-            # Если пользователь **очистил** изображение
             elif self.image_cleared:
-                # Удаляем старое изображение (если есть)
                 old_path = None
                 for p in self.projects:
                     if p["id"] == self.editing_project_id:
@@ -851,9 +804,8 @@ class ProjectsManager:
                         break
                 if old_path:
                     self._delete_image(old_path)
-                new_image_path = None                       # <-- явно ставим None
+                new_image_path = None                      
 
-            # Обновляем проект
             for proj in self.projects:
                 if proj["id"] == self.editing_project_id:
                     proj.update(
@@ -875,14 +827,10 @@ class ProjectsManager:
 
         save_projects(self.projects)
 
-        # Сбрасываем флаг очистки, чтобы последующие операции не «запомнили» удаление
-        self.image_cleared = False                     # <<< NEW >>>
+        self.image_cleared = False                     
         self.close_dialog()
         self.update_content(self.get_view())
 
-    # --------------------------------------------------------------------- #
-    #  Удаление проекта (подтверждение)
-    # --------------------------------------------------------------------- #
     def _confirm_delete(self, project_id: int):
         def close_dialog(e):
             dlg.open = False

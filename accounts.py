@@ -3,12 +3,17 @@ import json
 import pyperclip
 from typing import List, Dict, Any, Optional
 from pathlib import Path
-from web3 import Web3
-from solders.keypair import Keypair
-import base58
 
 DATA_DIR = Path("data")
 JSON_FILE = DATA_DIR / "accounts.json"
+
+NETWORKS = [
+    {"id": "evm", "label": "EVM", "field": "evm_private_key"},
+    {"id": "sol", "label": "Solana", "field": "sol_private_key"},
+    {"id": "sui", "label": "Sui", "field": "sui_private_key"},
+    {"id": "aptos", "label": "Aptos", "field": "aptos_private_key"},
+    {"id": "btc", "label": "Bitcoin", "field": "btc_private_key"},
+]
 
 def ensure_data_dir():
     DATA_DIR.mkdir(exist_ok=True)
@@ -22,43 +27,16 @@ def load_accounts() -> List[Dict[str, Any]]:
     with open(JSON_FILE, 'r', encoding='utf-8') as f:
         data = json.load(f)
         for acc in data:
-            if "evm_address" not in acc and acc.get("evm_private_key"):
-                addr = derive_evm_address(acc["evm_private_key"])
-                if addr:
-                    acc["evm_address"] = addr
-            if "solana_address" not in acc and acc.get("sol_private_key"):
-                addr = derive_solana_address(acc["sol_private_key"])
-                if addr:
-                    acc["solana_address"] = addr
+            for net in NETWORKS:
+                field = net["field"]
+                if field not in acc:
+                    acc[field] = ""
         return data
 
 def save_accounts(accounts: List[Dict[str, Any]]):
     ensure_data_dir()
     with open(JSON_FILE, 'w', encoding='utf-8') as f:
         json.dump(accounts, f, indent=4, ensure_ascii=False)
-
-def derive_evm_address(private_key: str) -> Optional[str]:
-    try:
-        if private_key.startswith('0x'):
-            private_key = private_key[2:]
-        account = Web3().eth.account.from_key(private_key)
-        return account.address
-    except Exception:
-        return None
-
-def derive_solana_address(private_key: str) -> Optional[str]:
-    try:
-        keypair = Keypair.from_base58_string(private_key)
-        return str(keypair.pubkey())
-    except:
-        try:
-            decoded = base58.b58decode(private_key)
-            if len(decoded) == 64:
-                keypair = Keypair.from_bytes(decoded)
-                return str(keypair.pubkey())
-        except:
-            pass
-    return None
 
 
 class AccountsManager:
@@ -69,6 +47,9 @@ class AccountsManager:
 
         self.evm_field = None
         self.sol_field = None
+        self.sui_field = None
+        self.aptos_field = None
+        self.btc_field = None
         self.email_field = None
         self.twitter_field = None
         self.discord_field = None
@@ -81,6 +62,8 @@ class AccountsManager:
         self._cached_view = None
         self._revision = 0
         self._last_revision = -1
+
+        self.selected_network = "evm"
 
     def _increment_revision(self):
         self._revision += 1
@@ -126,6 +109,11 @@ class AccountsManager:
             tooltip=tooltip,
         )
 
+    def on_network_change(self, e):
+        self.selected_network = e.control.value
+        self._increment_revision()
+        self.update_content(self.get_view())
+
     def _build_view(self) -> ft.Container:
         header = ft.Row([
             ft.Text("Wallets list", size=24, weight=ft.FontWeight.BOLD),
@@ -162,31 +150,41 @@ class AccountsManager:
             )
         ], alignment=ft.MainAxisAlignment.START)
 
-        col_spacing = 8
         col_widths = {
             "id": 70,
-            "evm": 250,
-            "sol": 250,
+            "key": 250,        
             "email": 280,
             "twitter": 250,
             "discord": 250,
             "actions": 160,
         }
-        key_text_width = 210
+        key_text_width = 240 
 
-        total_width = sum(col_widths.values()) + col_spacing * (len(col_widths) - 1)
+        network_dropdown_header = ft.Dropdown(
+            options=[ft.dropdown.Option(net["id"], net["label"]) for net in NETWORKS],
+            value=self.selected_network,
+            width=col_widths["key"] - 20,
+            text_size=16,
+            dense=True,
+            on_select=self.on_network_change
+        )
+
+        header_key_cell = ft.Container(
+            content=network_dropdown_header,
+            width=col_widths["key"],
+            alignment=ft.Alignment.CENTER,
+            padding=ft.padding.only(left=8, right=8, top=4, bottom=4),
+        )
 
         header_row = ft.Container(
             content=ft.Row([
                 self.centered_header("ID", col_widths["id"]),
-                self.centered_header("EVM Key", col_widths["evm"]),
-                self.centered_header("Solana Key", col_widths["sol"]),
+                header_key_cell,
                 self.centered_header("Email", col_widths["email"]),
                 self.centered_header("Twitter", col_widths["twitter"]),
                 self.centered_header("Discord", col_widths["discord"]),
                 self.centered_header("Actions", col_widths["actions"]),
-            ], spacing=col_spacing, vertical_alignment=ft.CrossAxisAlignment.CENTER),
-            width=total_width,
+            ], spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER),
             border=ft.Border(
                 top=ft.BorderSide(1, ft.Colors.GREY_800),
                 left=ft.BorderSide(1, ft.Colors.GREY_800),
@@ -222,70 +220,44 @@ class AccountsManager:
                     icon_size=20,
                 )
 
-                # EVM ключ
-                evm_key = acc.get("evm_private_key", "")
-                evm_display = evm_key[:8] + "..." + evm_key[-4:] if len(evm_key) > 12 else evm_key
-                evm_copy_btn = ft.IconButton(
+                # Получаем приватный ключ для выбранной сети
+                key_field = next((n["field"] for n in NETWORKS if n["id"] == self.selected_network), "evm_private_key")
+                full_key = acc.get(key_field, "")
+                display_key = full_key[:8] + "..." + full_key[-4:] if len(full_key) > 12 else full_key
+
+                copy_btn = ft.IconButton(
                     icon=ft.Icons.CONTENT_COPY,
                     icon_size=16,
-                    tooltip="Copy EVM key",
-                    data=evm_key,
+                    tooltip=f"Copy {self.selected_network.upper()} key",
+                    data=full_key,
                     on_click=self._copy_to_clipboard,
                     width=24,
                     height=24,
                     padding=0,
                 )
-                evm_cell_content = ft.Row([
-                    self.centered_cell(evm_display, key_text_width, tooltip=evm_key),
-                    evm_copy_btn,
+                key_cell_content = ft.Row([
+                    self.centered_cell(display_key, key_text_width, tooltip=full_key),
+                    copy_btn,
                 ], spacing=0, alignment=ft.MainAxisAlignment.CENTER, vertical_alignment=ft.CrossAxisAlignment.CENTER)
-                evm_cell = ft.Container(
-                    content=evm_cell_content,
-                    width=col_widths["evm"],
-                    alignment=ft.Alignment.CENTER,
-                )
-
-                # Solana ключ
-                sol_key = acc.get("sol_private_key", "")
-                sol_display = sol_key[:8] + "..." + sol_key[-4:] if len(sol_key) > 12 else sol_key
-                sol_copy_btn = ft.IconButton(
-                    icon=ft.Icons.CONTENT_COPY,
-                    icon_size=16,
-                    tooltip="Copy Solana key",
-                    data=sol_key,
-                    on_click=self._copy_to_clipboard,
-                    width=24,
-                    height=24,
-                    padding=0,
-                )
-                sol_cell_content = ft.Row([
-                    self.centered_cell(sol_display, key_text_width, tooltip=sol_key),
-                    sol_copy_btn,
-                ], spacing=0, alignment=ft.MainAxisAlignment.CENTER, vertical_alignment=ft.CrossAxisAlignment.CENTER)
-                sol_cell = ft.Container(
-                    content=sol_cell_content,
-                    width=col_widths["sol"],
-                    alignment=ft.Alignment.CENTER,
-                )
-
-                # Actions
-                actions_cell = ft.Container(
-                    content=ft.Row([edit_btn, delete_btn], spacing=2, alignment=ft.MainAxisAlignment.CENTER),
-                    width=col_widths["actions"],
+                key_cell = ft.Container(
+                    content=key_cell_content,
+                    width=col_widths["key"],
                     alignment=ft.Alignment.CENTER,
                 )
 
                 row = ft.Container(
                     content=ft.Row([
                         self.centered_cell(str(acc.get("id", "")), col_widths["id"]),
-                        evm_cell,
-                        sol_cell,
+                        key_cell,
                         self.centered_cell(acc.get("email", ""), col_widths["email"], tooltip=acc.get("email", "")),
                         self.centered_cell(acc.get("twitter_token", ""), col_widths["twitter"], tooltip=acc.get("twitter_token", "")),
                         self.centered_cell(acc.get("discord_token", ""), col_widths["discord"], tooltip=acc.get("discord_token", "")),
-                        actions_cell,
-                    ], spacing=col_spacing, vertical_alignment=ft.CrossAxisAlignment.CENTER),
-                    width=total_width,
+                        ft.Container(
+                            content=ft.Row([edit_btn, delete_btn], spacing=2, alignment=ft.MainAxisAlignment.CENTER),
+                            width=col_widths["actions"],
+                            alignment=ft.Alignment.CENTER,
+                        ),
+                    ], spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER),
                     border=ft.Border(
                         left=ft.BorderSide(1, ft.Colors.GREY_800),
                         right=ft.BorderSide(1, ft.Colors.GREY_800),
@@ -299,14 +271,17 @@ class AccountsManager:
                     rows_content,
                     scroll=ft.ScrollMode.ALWAYS,
                 ),
-                height=700,
-                width=total_width,
+                height=500,
                 border=ft.Border(
                     left=ft.BorderSide(1, ft.Colors.GREY_800),
                     right=ft.BorderSide(1, ft.Colors.GREY_800),
                     bottom=ft.BorderSide(1, ft.Colors.GREY_800),
                 ),
             )
+
+            total_width = sum(col_widths.values()) + 8 * (len(col_widths) - 1)
+            header_row.width = total_width
+            body.width = total_width
 
             table_content = ft.Column([
                 header_row,
@@ -318,7 +293,7 @@ class AccountsManager:
                     [table_content],
                     scroll=ft.ScrollMode.ALWAYS,
                 ),
-                height=700,
+                height=550,
                 alignment=ft.Alignment.CENTER,
             )
         else:
@@ -330,7 +305,7 @@ class AccountsManager:
                 ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
                 padding=50,
                 alignment=ft.Alignment.CENTER,
-                height=700,
+                height=400,
             )
 
         return ft.Container(
@@ -350,9 +325,6 @@ class AccountsManager:
             self._last_revision = self._revision
         return self._cached_view
 
-    def _create_table_rows(self) -> List[ft.DataRow]:
-        return []
-
     # ---------- ИМПОРТ ----------
     def open_import_dialog(self, e: ft.ControlEvent = None):
         self.import_text_field = ft.TextField(
@@ -360,7 +332,7 @@ class AccountsManager:
             multiline=True,
             min_lines=10,
             max_lines=20,
-            hint_text="Format: evm_key|sol_key|email|twitter_token|discord_token",
+            hint_text="Format: evm_key|sol_key|sui_key|aptos_key|btc_key|email|twitter_token|discord_token\n(backward compatible: evm_key|sol_key|email|twitter_token|discord_token)",
         )
 
         self.import_dialog = ft.AlertDialog(
@@ -369,7 +341,7 @@ class AccountsManager:
             content=ft.Container(
                 content=ft.Column([
                     self.import_text_field,
-                    ft.Text("Each line should contain 5 fields separated by '|'", size=12, color=ft.Colors.GREY_400),
+                    ft.Text("Each line should contain fields separated by '|'", size=12, color=ft.Colors.GREY_400),
                 ], scroll=ft.ScrollMode.AUTO),
                 width=600,
                 padding=10,
@@ -388,18 +360,6 @@ class AccountsManager:
             self.import_dialog.open = False
             self.page.update()
 
-    def _derive_addresses(self, account: Dict):
-        evm_key = account.get("evm_private_key")
-        sol_key = account.get("sol_private_key")
-        if evm_key:
-            addr = derive_evm_address(evm_key)
-            if addr:
-                account["evm_address"] = addr
-        if sol_key:
-            addr = derive_solana_address(sol_key)
-            if addr:
-                account["solana_address"] = addr
-
     def import_from_text(self, e: ft.ControlEvent = None):
         text = self.import_text_field.value
         if not text:
@@ -412,24 +372,38 @@ class AccountsManager:
             if not line or line.startswith('#'):
                 continue
             parts = [part.strip() for part in line.split('|')]
-            if len(parts) < 5:
-                print(f"Line {line_num}: недостаточно полей ({len(parts)}), ожидается 5, разделённых '|'.")
+            if len(parts) == 5:
+                evm = parts[0]
+                sol = parts[1]
+                email = parts[2]
+                twitter = parts[3]
+                discord = parts[4]
+                sui = aptos = btc = ""
+            elif len(parts) >= 8:
+                evm = parts[0]
+                sol = parts[1]
+                sui = parts[2]
+                aptos = parts[3]
+                btc = parts[4]
+                email = parts[5]
+                twitter = parts[6]
+                discord = parts[7]
+            else:
+                print(f"Line {line_num}: недостаточно полей ({len(parts)}), ожидается 5 или 8, разделённых '|'.")
                 continue
-            evm = parts[0]
-            sol = parts[1]
-            email = parts[2]
-            twitter = parts[3]
-            discord = parts[4]
+
             max_id += 1
             new_acc = {
                 "id": max_id,
                 "evm_private_key": evm,
                 "sol_private_key": sol,
+                "sui_private_key": sui,
+                "aptos_private_key": aptos,
+                "btc_private_key": btc,
                 "email": email,
                 "twitter_token": twitter,
                 "discord_token": discord,
             }
-            self._derive_addresses(new_acc)
             new_accounts.append(new_acc)
         if new_accounts:
             self.accounts.extend(new_accounts)
@@ -467,6 +441,27 @@ class AccountsManager:
             min_lines=1,
             max_lines=3,
         )
+        self.sui_field = ft.TextField(
+            label="Sui Private Key",
+            value=account.get("sui_private_key") if account else "",
+            multiline=True,
+            min_lines=1,
+            max_lines=3,
+        )
+        self.aptos_field = ft.TextField(
+            label="Aptos Private Key",
+            value=account.get("aptos_private_key") if account else "",
+            multiline=True,
+            min_lines=1,
+            max_lines=3,
+        )
+        self.btc_field = ft.TextField(
+            label="Bitcoin Private Key (WIF)",
+            value=account.get("btc_private_key") if account else "",
+            multiline=True,
+            min_lines=1,
+            max_lines=3,
+        )
         self.email_field = ft.TextField(
             label="Email (log:pass)",
             value=account.get("email") if account else "",
@@ -496,11 +491,14 @@ class AccountsManager:
                 content=ft.Column([
                     self.evm_field,
                     self.sol_field,
+                    self.sui_field,
+                    self.aptos_field,
+                    self.btc_field,
                     self.email_field,
                     self.twitter_field,
                     self.discord_field,
-                ], scroll=ft.ScrollMode.AUTO, height=400),
-                width=500,
+                ], scroll=ft.ScrollMode.AUTO, height=500),
+                width=550,
             ),
             actions=[
                 ft.TextButton("Save", on_click=self.save_account),
@@ -518,11 +516,13 @@ class AccountsManager:
                 "id": new_id,
                 "evm_private_key": self.evm_field.value or "",
                 "sol_private_key": self.sol_field.value or "",
+                "sui_private_key": self.sui_field.value or "",
+                "aptos_private_key": self.aptos_field.value or "",
+                "btc_private_key": self.btc_field.value or "",
                 "email": self.email_field.value or "",
                 "twitter_token": self.twitter_field.value or "",
                 "discord_token": self.discord_field.value or "",
             }
-            self._derive_addresses(new_account)
             self.accounts.append(new_account)
         else:
             for acc in self.accounts:
@@ -530,11 +530,13 @@ class AccountsManager:
                     acc.update({
                         "evm_private_key": self.evm_field.value or "",
                         "sol_private_key": self.sol_field.value or "",
+                        "sui_private_key": self.sui_field.value or "",
+                        "aptos_private_key": self.aptos_field.value or "",
+                        "btc_private_key": self.btc_field.value or "",
                         "email": self.email_field.value or "",
                         "twitter_token": self.twitter_field.value or "",
                         "discord_token": self.discord_field.value or "",
                     })
-                    self._derive_addresses(acc)
                     break
         save_accounts(self.accounts)
         self._increment_revision()
@@ -546,7 +548,6 @@ class AccountsManager:
             self.dialog_modal.open = False
             self.page.update()
 
-    # ---------- УДАЛЕНИЕ ----------
     def _confirm_delete(self, account_id):
         def close_dialog(e):
             dlg.open = False
