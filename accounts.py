@@ -110,7 +110,8 @@ class AccountsManager:
         )
 
     def on_network_change(self, e):
-        self.selected_network = e.control.value
+        # В зависимости от версии Flet значение может быть в e.data или e.control.value
+        self.selected_network = e.data if hasattr(e, 'data') else e.control.value
         self._increment_revision()
         self.update_content(self.get_view())
 
@@ -152,25 +153,32 @@ class AccountsManager:
 
         col_widths = {
             "id": 70,
-            "key": 250,        
+            "key": 300,
             "email": 280,
             "twitter": 250,
             "discord": 250,
             "actions": 160,
         }
-        key_text_width = 240 
+        key_text_width = 270
 
-        network_dropdown_header = ft.Dropdown(
+        # Dropdown с жирным шрифтом и центрированным текстом
+        network_dropdown = ft.Dropdown(
             options=[ft.dropdown.Option(net["id"], net["label"]) for net in NETWORKS],
             value=self.selected_network,
             width=col_widths["key"] - 20,
-            text_size=16,
-            dense=True,
-            on_select=self.on_network_change
+            text_style=ft.TextStyle(weight=ft.FontWeight.BOLD),
+            text_align=ft.TextAlign.CENTER,
+        )
+        network_dropdown.on_select = self.on_network_change
+
+        # Центрируем сам Dropdown внутри контейнера
+        dropdown_container = ft.Container(
+            content=network_dropdown,
+            alignment=ft.Alignment.CENTER,
         )
 
         header_key_cell = ft.Container(
-            content=network_dropdown_header,
+            content=dropdown_container,
             width=col_widths["key"],
             alignment=ft.Alignment.CENTER,
             padding=ft.padding.only(left=8, right=8, top=4, bottom=4),
@@ -220,7 +228,6 @@ class AccountsManager:
                     icon_size=20,
                 )
 
-                # Получаем приватный ключ для выбранной сети
                 key_field = next((n["field"] for n in NETWORKS if n["id"] == self.selected_network), "evm_private_key")
                 full_key = acc.get(key_field, "")
                 display_key = full_key[:8] + "..." + full_key[-4:] if len(full_key) > 12 else full_key
