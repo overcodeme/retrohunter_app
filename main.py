@@ -96,6 +96,7 @@ def main(page: ft.Page):
         expand=True
     )
 
+    # Выделяем первую вкладку как активную
     menu_items[0].bgcolor = ft.Colors.BLUE_700
     if isinstance(menu_items[0].content, ft.Row) and len(menu_items[0].content.controls) > 1:
         menu_items[0].content.controls[1].color = ft.Colors.WHITE
