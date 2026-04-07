@@ -38,6 +38,7 @@ def load_projects() -> List[Dict[str, Any]]:
         proj.setdefault("network", NETWORK_EVM)
         proj.setdefault("image_path", None)
         proj.setdefault("archived", False)
+        proj.setdefault("tags", [])
 
     return data
 
@@ -86,11 +87,16 @@ class ProjectsManager:
         self.file_picker: Optional[ft.FilePicker] = None
         self.image_cleared: bool = False
 
+        # Теги
+        self.current_tags: List[str] = []
+        self.tag_input: Optional[ft.TextField] = None
+        self.tags_container: Optional[ft.Column] = None
+
         # Фильтры и сортировка
         self.filter_search = ft.TextField(
             label="Search projects",
             prefix_icon=ft.Icons.SEARCH,
-            hint_text="Name, description, type...",
+            hint_text="Name, description, type, tags...",
             on_submit=self.apply_filters,
             expand=True,
         )
@@ -232,14 +238,14 @@ class ProjectsManager:
             return f"{key[:4]}...{key[-4:]}" if key else "No Solana"
 
     def _matches_filters(self, project: Dict) -> bool:
-        # Текстовый поиск
+        # Текстовый поиск (поиск по названию, описанию, типу и тегам)
         if self.filter_search.value:
             txt = self.filter_search.value.lower()
-            if not (
-                txt in project.get("name", "").lower()
-                or txt in project.get("description", "").lower()
-                or txt in project.get("type", "").lower()
-            ):
+            name_match = txt in project.get("name", "").lower()
+            desc_match = txt in project.get("description", "").lower()
+            type_match = txt in project.get("type", "").lower()
+            tags_match = any(txt in tag.lower() for tag in project.get("tags", []))
+            if not (name_match or desc_match or type_match or tags_match):
                 return False
 
         # Тип, статус, расходы
@@ -289,6 +295,33 @@ class ProjectsManager:
     # --------------------------------------------------------------------- #
     #  Карточка проекта
     # --------------------------------------------------------------------- #
+    def _build_tags_row(self, tags: List[str]) -> ft.Row:
+        """Создаёт строку с чипами тегов."""
+        if not tags:
+            return ft.Container()
+        chips = []
+        for tag in tags[:5]:   # ограничим 5 тегами, чтобы не загромождать
+            chips.append(
+                ft.Container(
+                    content=ft.Text(tag, size=11, color=ft.Colors.WHITE),
+                    bgcolor=ft.Colors.BLUE_400,
+                    border_radius=12,
+                    padding=ft.padding.only(left=8, right=8, top=2, bottom=2),
+                    margin=ft.margin.only(right=5, bottom=5),
+                )
+            )
+        # если тегов больше 5, добавим индикатор
+        if len(tags) > 5:
+            chips.append(
+                ft.Container(
+                    content=ft.Text(f"+{len(tags)-5}", size=11, color=ft.Colors.WHITE),
+                    bgcolor=ft.Colors.GREY_600,
+                    border_radius=12,
+                    padding=ft.padding.only(left=8, right=8, top=2, bottom=2),
+                )
+            )
+        return ft.Row(chips, wrap=True, spacing=0)
+
     def _build_project_card(self, project: Dict) -> ft.Container:
         project_id = project["id"]
         name = project.get("name", "")
@@ -300,6 +333,7 @@ class ProjectsManager:
         end = project.get("end_date", "")
         accounts_cnt = len(project.get("accounts", []))
         expenses, incomes = self._get_project_finances(project_id)
+        tags = project.get("tags", [])
 
         status_color = self._get_status_color(status)
 
@@ -439,6 +473,7 @@ class ProjectsManager:
                 ft.Row([ft.Icon(ft.Icons.PEOPLE_OUTLINE, size=14, color=ft.Colors.GREY_400),
                         ft.Text(f"{accounts_cnt} accounts", size=14),
                         ft.Container(expand=True)], spacing=5),
+                self._build_tags_row(tags),
                 finance_row,
                 ft.Container(height=5),
                 ft.ProgressBar(
@@ -597,6 +632,7 @@ class ProjectsManager:
         self.current_network = NETWORK_EVM
         self.selected_image_path = None
         self.image_cleared = False
+        self.current_tags = []
         self._show_project_dialog()
 
     def open_edit_project_dialog(self, e: ft.ControlEvent):
@@ -610,6 +646,7 @@ class ProjectsManager:
             self.current_network = project.get("network", NETWORK_EVM)
             self.selected_image_path = project.get("image_path")
             self.image_cleared = False
+            self.current_tags = project.get("tags", []).copy()
             self._show_project_dialog(project)
 
     # --------------------------------------------------------------------- #
@@ -678,6 +715,43 @@ class ProjectsManager:
         self.page.update()
 
     # --------------------------------------------------------------------- #
+    #  Управление тегами
+    # --------------------------------------------------------------------- #
+    def _add_tag(self, e):
+        tag = self.tag_input.value.strip()
+        if tag and tag not in self.current_tags:
+            self.current_tags.append(tag)
+            self._update_tags_display()
+            self.tag_input.value = ""
+            self.page.update()
+
+    def _remove_tag(self, tag: str):
+        if tag in self.current_tags:
+            self.current_tags.remove(tag)
+            self._update_tags_display()
+            self.page.update()
+
+    def _update_tags_display(self):
+        if not self.tags_container:
+            return
+        controls = []
+        for tag in self.current_tags:
+            controls.append(
+                ft.Container(
+                    content=ft.Text(tag, size=13, color=ft.Colors.WHITE),
+                    bgcolor=ft.Colors.BLUE_400,
+                    border_radius=12,
+                    padding=ft.padding.only(left=10, right=10, top=4, bottom=4),
+                    on_click=lambda e, t=tag: self._remove_tag(t),
+                    ink=True,
+                )
+            )
+        if controls:
+            self.tags_container.controls = [ft.Row(controls, wrap=True, spacing=5)]
+        else:
+            self.tags_container.controls = [ft.Text("No tags added", color=ft.Colors.GREY_400)]
+
+    # --------------------------------------------------------------------- #
     #  Формирование диалога
     # --------------------------------------------------------------------- #
     def _show_project_dialog(self, project: Optional[Dict] = None):
@@ -707,6 +781,7 @@ class ProjectsManager:
             options=[
                 ft.dropdown.Option("testnet", "Testnet"),
                 ft.dropdown.Option("mainnet", "Mainnet"),
+                ft.dropdown.Option("defi", "DeFi"),
                 ft.dropdown.Option("dex", "DEX"),
                 ft.dropdown.Option("social", "Social"),
                 ft.dropdown.Option("gamefi", "GameFi"),
@@ -743,6 +818,20 @@ class ProjectsManager:
             value=self.current_network,
             on_change=self.on_network_change,
         )
+
+        # Поле для тегов
+        self.tag_input = ft.TextField(
+            label="New tag",
+            hint_text="e.g., layer1, points, nft...",
+            width=200,
+        )
+        add_tag_btn = ft.ElevatedButton(
+            "Add tag",
+            icon=ft.Icons.ADD,
+            on_click=self._add_tag,
+        )
+        self.tags_container = ft.Column(spacing=5, height=100, scroll=ft.ScrollMode.AUTO)
+        self._update_tags_display()
 
         # Кнопка выбора изображения
         choose_image_btn = ft.Button(
@@ -799,6 +888,10 @@ class ProjectsManager:
                                 clear_image_btn],
                                spacing=10),
                         ft.Divider(height=10, color=ft.Colors.GREY_800),
+                        ft.Text("Tags:", size=14, weight=ft.FontWeight.BOLD),
+                        ft.Row([self.tag_input, add_tag_btn], spacing=10),
+                        self.tags_container,
+                        ft.Divider(height=10, color=ft.Colors.GREY_800),
                         ft.Text("Select accounts for this project:",
                                 size=14,
                                 weight=ft.FontWeight.BOLD),
@@ -815,7 +908,7 @@ class ProjectsManager:
                         ),
                     ],
                     scroll=ft.ScrollMode.AUTO,
-                    height=700,
+                    height=750,
                 ),
                 width=750,
             ),
@@ -949,6 +1042,7 @@ class ProjectsManager:
                 "accounts": selected_accounts,
                 "image_path": image_path,
                 "archived": False,
+                "tags": self.current_tags.copy(),
             }
             self.projects.append(new_project)
 
@@ -990,6 +1084,7 @@ class ProjectsManager:
                             "image_path": new_image_path
                             if (new_image_path is not None or self.image_cleared)
                             else proj.get("image_path"),
+                            "tags": self.current_tags.copy(),
                         }
                     )
                     break
