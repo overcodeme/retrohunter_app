@@ -1,4 +1,5 @@
 import flet as ft
+import asyncio
 from accounts import AccountsManager
 from projects import ProjectsManager
 from expenses import ExpensesManager
@@ -36,7 +37,7 @@ def main(page: ft.Page):
         if e.control.data == "dashboard":
             content_area.content = dashboard_manager.get_view()
         elif e.control.data == "wallets":
-            content_area.content = accounts_manager.get_view()
+            asyncio.create_task(accounts_manager.get_view_async())
         elif e.control.data == "projects":
             content_area.content = projects_manager.get_view()
         elif e.control.data == "expenses":
