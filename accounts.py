@@ -11,7 +11,9 @@ from solders.keypair import Keypair as SolKeypair
 from aptos_sdk.account import Account as AptosAccount
 from bitcoinlib.keys import HDKey
 
-
+# ──────────────────────────────────────────────────────────────
+#  Константы и вспомогательные функции
+# ──────────────────────────────────────────────────────────────
 DATA_DIR = Path("data")
 JSON_FILE = DATA_DIR / "accounts.json"
 
@@ -27,7 +29,6 @@ def ensure_data_dir() -> None:
     DATA_DIR.mkdir(exist_ok=True)
 
 def load_accounts() -> List[Dict[str, Any]]:
-    """Читаем JSON‑файл; при первом запуске создаём пустой массив."""
     ensure_data_dir()
     if not JSON_FILE.exists():
         JSON_FILE.write_text("[]", encoding="utf-8")
@@ -71,35 +72,39 @@ def derive_address(network: str, priv_key: str) -> str:
         print(f"[derive_address] {network} error: {exc}")
     return ""
 
-
+# ──────────────────────────────────────────────────────────────
+#  Менеджер аккаунтов
+# ──────────────────────────────────────────────────────────────
 class AccountsManager:
-    PAGE_SIZE = 30 
-
     def __init__(self, page: ft.Page, update_content_callback):
         self.page = page
         self.update_content = update_content_callback
         self.accounts = load_accounts()
 
+        # UI‑поля диалогов
         self.evm_field = self.sol_field = self.sui_field = self.aptos_field = None
         self.btc_field = self.email_field = self.twitter_field = self.discord_field = None
         self.dialog_modal = None
         self.editing_account_id = None
         self.import_dialog = self.import_text_field = self.file_picker = None
 
+        # кеш‑механизм
         self._cached_view = None
         self._revision = 0
         self._last_revision = -1
 
+        # фильтры / UI‑состояния
         self.selected_network = "evm"
-        self.display_mode = "key" 
+        self.display_mode = "key"          # «key» или «address»
         self.show_only_with_key = False
         self.selected_account_ids: set[int] = set()
 
-    async def _load_accounts(self) -> List[Dict[str, Any]]:
-        await asyncio.sleep(0.2)
-        return self.accounts
-
+    # ------------------------------------------------------------------
+    #  Асинхронная загрузка с индикатором
+    # ------------------------------------------------------------------
     async def get_view_async(self) -> ft.Container:
+        """Асинхронный рендер «Wallets» с индикатором загрузки."""
+        # 1. Показываем индикатор
         loading = ft.Container(
             content=ft.Column(
                 [
@@ -113,36 +118,50 @@ class AccountsManager:
             alignment=ft.Alignment.CENTER,
         )
         self.update_content(loading)
-        await asyncio.sleep(0)
+        await asyncio.sleep(0)  # даём UI отрисоваться
 
-        self.accounts = await self._load_accounts() 
-        self._current_offset = 0
-        view = self._build_table(page_first=True)
+        # 2. Загружаем данные (здесь можно делать реальную асинхронную загрузку)
+        #    Сейчас просто задержка для имитации
+        await asyncio.sleep(0.1)
+        # (в реальном коде здесь может быть вызов БД или API)
 
-        self.update_content(view)        
-        return view                       
+        # 3. Строим таблицу
+        view = self._build_table()
+        self.update_content(view)
+        return view
 
-
-    def _build_table(self, page_first: bool = False) -> ft.Container:
+    def _build_table(self) -> ft.Container:
+        """Строит таблицу со всеми строками и вертикальной прокруткой."""
         filtered = self._filter_accounts()
-        slice_ = filtered[self._current_offset:self._current_offset + self.PAGE_SIZE]
+        rows = [self._make_row(acc) for acc in filtered]
 
-        rows = [self._make_row(acc) for acc in slice_]
-        body = ft.Column(rows, scroll=ft.ScrollMode.ALWAYS)
+        # Заголовок таблицы
+        header_row = self._header_row()
 
-        if page_first:
-            def on_scroll(e: ft.ControlEvent):
-                if e.control.scroll_y >= e.control.scroll_max_y - 10:
-                    if self._current_offset + self.PAGE_SIZE < len(filtered):
-                        self._current_offset += self.PAGE_SIZE
-                        for acc in filtered[self._current_offset:
-                                            self._current_offset + self.PAGE_SIZE]:
-                            body.controls.append(self._make_row(acc))
-                        self.page.update()
-            body.on_scroll = on_scroll
+        # Тело таблицы с вертикальной прокруткой
+        body = ft.Container(
+            content=ft.Column(rows, scroll=ft.ScrollMode.ALWAYS),
+            height=450,                     # фиксированная высота для прокрутки
+            border=ft.Border(
+                left=ft.BorderSide(1, ft.Colors.GREY_800),
+                right=ft.BorderSide(1, ft.Colors.GREY_800),
+                bottom=ft.BorderSide(1, ft.Colors.GREY_800),
+            ),
+        )
 
+        # Общая ширина таблицы (сумма ширин колонок + промежутки)
+        col_widths = {
+            "select": 40, "id": 60, "value": 280,
+            "email": 280, "twitter": 250, "discord": 250, "actions": 160,
+        }
+        total_width = sum(col_widths.values()) + 8 * (len(col_widths) - 1)
+        header_row.width = total_width
+        body.width = total_width
+
+        # Горизонтальная прокрутка для всей таблицы (если не помещается по ширине)
+        table_content = ft.Column([header_row, body])
         table_container = ft.Container(
-            content=ft.Row([ft.Column([self._header_row(), body])], scroll=ft.ScrollMode.ALWAYS),
+            content=ft.Row([table_content], scroll=ft.ScrollMode.ALWAYS),
             height=550,
             alignment=ft.Alignment.CENTER,
         )
@@ -162,6 +181,9 @@ class AccountsManager:
             padding=20,
         )
 
+    # ------------------------------------------------------------------
+    #  Одна строка таблицы
+    # ------------------------------------------------------------------
     def _make_row(self, acc: Dict) -> ft.Container:
         col_widths = {
             "select": 40, "id": 60, "value": 280,
@@ -169,6 +191,7 @@ class AccountsManager:
         }
         value_text_width = 240
 
+        # Чекбокс выбора
         cb = ft.Checkbox(
             value=acc["id"] in self.selected_account_ids,
             data=acc["id"],
@@ -176,6 +199,7 @@ class AccountsManager:
         )
         select_cell = ft.Container(content=cb, width=col_widths["select"], alignment=ft.Alignment.CENTER)
 
+        # Кнопки редактирования и удаления
         delete_btn = ft.IconButton(
             icon=ft.Icons.DELETE_OUTLINE,
             icon_color=ft.Colors.RED_400,
@@ -193,6 +217,7 @@ class AccountsManager:
             width=32, height=32, padding=0, icon_size=20,
         )
 
+        # Значение (ключ или адрес) с кнопкой копирования
         display_value = self._get_account_display(acc, self.selected_network)
         display_short = (
             display_value[:8] + "…" + display_value[-4:] if len(display_value) > 12 else display_value
@@ -218,6 +243,7 @@ class AccountsManager:
                                   width=col_widths["value"],
                                   alignment=ft.Alignment.CENTER)
 
+        # Сборка строки
         return ft.Container(
             content=ft.Row(
                 [
@@ -247,7 +273,9 @@ class AccountsManager:
             ),
         )
 
-
+    # ------------------------------------------------------------------
+    #  UI‑фрагменты (шапка, фильтры, статистика, заголовок колонок)
+    # ------------------------------------------------------------------
     def _header(self) -> ft.Row:
         return ft.Row(
             [
@@ -321,6 +349,7 @@ class AccountsManager:
             "email": 280, "twitter": 250, "discord": 250, "actions": 160,
         }
 
+        # Dropdown для выбора отображения (ключ/адрес) прямо в заголовке колонки Value
         display_dropdown = ft.Dropdown(
             options=[
                 ft.dropdown.Option("key", "Private Key"),
@@ -361,6 +390,9 @@ class AccountsManager:
             bgcolor=ft.Colors.GREY_900,
         )
 
+    # ------------------------------------------------------------------
+    #  Вспомогательные утилиты
+    # ------------------------------------------------------------------
     @staticmethod
     def centered_header(text: str, width: int) -> ft.Container:
         return ft.Container(
@@ -397,6 +429,9 @@ class AccountsManager:
     def _increment_revision(self) -> None:
         self._revision += 1
 
+    # ------------------------------------------------------------------
+    #  Обработчики UI
+    # ------------------------------------------------------------------
     def on_network_change(self, e):
         self.selected_network = e.data if hasattr(e, "data") else e.control.value
         self.selected_account_ids.clear()
@@ -422,6 +457,9 @@ class AccountsManager:
             except Exception as exc:
                 print(f"Copy failed: {exc}")
 
+    # ------------------------------------------------------------------
+    #  Фильтрация аккаунтов
+    # ------------------------------------------------------------------
     def _get_account_display(self, acc: Dict, network: str) -> str:
         if self.display_mode == "key":
             for net in NETWORKS:
@@ -444,6 +482,9 @@ class AccountsManager:
             return self.accounts
         return [acc for acc in self.accounts if self._get_account_key(acc, self.selected_network)]
 
+    # ------------------------------------------------------------------
+    #  Экспорт / импорт
+    # ------------------------------------------------------------------
     def _export_to_csv(self, path: Path) -> None:
         with open(path, "w", encoding="utf-8", newline="") as f:
             writer = csv.writer(f)
@@ -527,6 +568,13 @@ class AccountsManager:
             self.page.snack_bar = ft.SnackBar(content=ft.Text(f"Export failed: {ex}"), open=True)
         self.page.update()
 
+    def _close_dialog(self, dlg: ft.AlertDialog) -> None:
+        dlg.open = False
+        self.page.update()
+
+    # ------------------------------------------------------------------
+    #  Bulk‑edit диалог
+    # ------------------------------------------------------------------
     def _bulk_edit_dialog(self) -> None:
         def on_save(e):
             field = field_dropdown.value
@@ -563,6 +611,9 @@ class AccountsManager:
         )
         self.page.show_dialog(dlg)
 
+    # ------------------------------------------------------------------
+    #  Импорт из текста
+    # ------------------------------------------------------------------
     def open_import_dialog(self, e: ft.ControlEvent = None) -> None:
         self.import_text_field = ft.TextField(
             label="Paste accounts data (one per line)",
@@ -646,6 +697,9 @@ class AccountsManager:
             self.close_import_dialog()
             self.update_content(self.get_view())
 
+    # ------------------------------------------------------------------
+    #  Диалог добавления / редактирования аккаунта
+    # ------------------------------------------------------------------
     def open_add_account_dialog(self, e: ft.ControlEvent = None) -> None:
         self.editing_account_id = None
         self._show_account_dialog()
@@ -733,7 +787,7 @@ class AccountsManager:
                             "btc_private_key": self.btc_field.value or "",
                             "email": self.email_field.value or "",
                             "twitter_token": self.twitter_field.value or "",
-                            "discord_token": self.discord_token.value or "",
+                            "discord_token": self.discord_field.value or "",
                         }
                     )
                     break
@@ -747,6 +801,9 @@ class AccountsManager:
             self.dialog_modal.open = False
             self.page.update()
 
+    # ------------------------------------------------------------------
+    #  Удаление аккаунта
+    # ------------------------------------------------------------------
     def _confirm_delete(self, account_id: int) -> None:
         def close_dialog(e):
             dlg.open = False
@@ -779,6 +836,9 @@ class AccountsManager:
         account_id = e.control.data
         self._confirm_delete(account_id)
 
+    # ------------------------------------------------------------------
+    #  Выбор строк
+    # ------------------------------------------------------------------
     def _on_select_account(self, e: ft.ControlEvent) -> None:
         acc_id = e.control.data
         if e.control.value:
@@ -799,66 +859,11 @@ class AccountsManager:
         self._increment_revision()
         self.update_content(self.get_view())
 
-    def _build_view(self) -> ft.Container:
-        filtered_accounts = self._filter_accounts()
-        if filtered_accounts:
-            rows_content = [self._make_row(acc) for acc in filtered_accounts]
-
-            body = ft.Container(
-                content=ft.Column(rows_content, scroll=ft.ScrollMode.ALWAYS),
-                height=500,
-                border=ft.Border(
-                    left=ft.BorderSide(1, ft.Colors.GREY_800),
-                    right=ft.BorderSide(1, ft.Colors.GREY_800),
-                    bottom=ft.BorderSide(1, ft.Colors.GREY_800),
-                ),
-            )
-            total_width = sum(
-                {"select": 40, "id": 60, "value": 280,
-                 "email": 280, "twitter": 250, "discord": 250, "actions": 160}.values()
-            ) + 8 * (7 - 1)
-            header_row = self._header_row()
-            header_row.width = total_width
-            body.width = total_width
-
-            table_content = ft.Column([header_row, body])
-            table_container = ft.Container(
-                content=ft.Row([table_content], scroll=ft.ScrollMode.ALWAYS),
-                height=550,
-                alignment=ft.Alignment.CENTER,
-            )
-        else:
-            table_container = ft.Container(
-                content=ft.Column(
-                    [
-                        ft.Icon(ft.Icons.ACCOUNT_BALANCE_OUTLINED, size=64, color=ft.Colors.GREY_600),
-                        ft.Text("No wallets match the filter", size=20, color=ft.Colors.GREY_400),
-                    ],
-                    horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-                ),
-                padding=50,
-                alignment=ft.Alignment.CENTER,
-                height=400,
-            )
-
-        return ft.Container(
-            content=ft.Column(
-                [
-                    self._header(),
-                    ft.Divider(height=20, color=ft.Colors.GREY_800),
-                    self._controls_row(),
-                    ft.Container(height=10),
-                    self._stats_row(),
-                    ft.Container(height=20),
-                    table_container,
-                ]
-            ),
-            padding=20,
-        )
-
+    # ------------------------------------------------------------------
+    #  Синхронный fallback (для совместимости)
+    # ------------------------------------------------------------------
     def get_view(self) -> ft.Container:
-        """Синхронный доступ – используется для кеша и fallback."""
         if self._cached_view is None or self._revision != self._last_revision:
-            self._cached_view = self._build_view()
+            self._cached_view = self._build_table()
             self._last_revision = self._revision
         return self._cached_view
